@@ -281,6 +281,61 @@ bot_nearest_node( origin )
 	return undefined;
 }
 
+bot_get_closest_enemy( origin )
+{
+	enemies = getaispeciesarray( level.zombie_team, "all" );
+	enemies = arraysort( enemies, origin );
+	if ( enemies.size >= 1 )
+	{
+		return enemies[ 0 ];
+	}
+	return undefined;
+}
+
+bot_revive_teammates()
+{
+	if(!maps\mp\zombies\_zm_laststand::player_any_player_in_laststand() || self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+	{
+		self cancelgoal("revive");
+		return;
+	}
+	if(!self hasgoal("revive"))
+	{
+		teammate = self get_closest_downed_teammate();
+		if(!isdefined(teammate))
+			return;
+		self AddGoal(teammate.origin, 50, 3, "revive");
+	}
+	else
+	{
+		if(self AtGoal("revive") || Distance(self.origin, self GetGoal("revive")) < 75)
+		{
+			teammate = self get_closest_downed_teammate();
+			teammate.revivetrigger disable_trigger();
+			wait 0.75;
+			teammate.revivetrigger enable_trigger();
+			if(!self maps\mp\zombies\_zm_laststand::player_is_in_laststand() && teammate maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+			{
+				teammate maps\mp\zombies\_zm_laststand::auto_revive( self );
+			}
+		}
+	}
+}
+
+get_closest_downed_teammate()
+{
+	if(!maps\mp\zombies\_zm_laststand::player_any_player_in_laststand())
+		return;
+	downed_players = [];
+	foreach(player in get_players())
+	{
+		if(player maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+		downed_players[downed_players.size] = player;
+	}
+	downed_players = arraysort(downed_players, self.origin);
+	return downed_players[0];
+}
+
 bot_pickup_powerup()
 {
 	if(maps\mp\zombies\_zm_powerups::get_powerups(self.origin, 1000).size == 0)

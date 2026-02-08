@@ -21,6 +21,256 @@ bot_spawn()
     self thread bot_check_player_blocking();
 }
 
+bot_spawn_init()
+{
+	if(level.script == "zm_tomb")
+	{
+		self SwitchToWeapon("c96_zm");
+		self SetSpawnWeapon("c96_zm");
+	}
+	self SwitchToWeapon("m1911_zm");
+	self SetSpawnWeapon("m1911_zm");
+	time = getTime();
+	if ( !isDefined( self.bot ) )
+	{
+		self.bot = spawnstruct();
+		self.bot.threat = spawnstruct();
+	}
+	self.bot.glass_origin = undefined;
+	self.bot.ignore_entity = [];
+	self.bot.previous_origin = self.origin;
+	self.bot.time_ads = 0;
+	self.bot.update_c4 = time + randomintrange( 1000, 3000 );
+	self.bot.update_crate = time + randomintrange( 1000, 3000 );
+	self.bot.update_crouch = time + randomintrange( 1000, 3000 );
+	self.bot.update_failsafe = time + randomintrange( 1000, 3000 );
+	self.bot.update_idle_lookat = time + randomintrange( 1000, 3000 );
+	self.bot.update_killstreak = time + randomintrange( 1000, 3000 );
+	self.bot.update_lookat = time + randomintrange( 1000, 3000 );
+	self.bot.update_objective = time + randomintrange( 1000, 3000 );
+	self.bot.update_objective_patrol = time + randomintrange( 1000, 3000 );
+	self.bot.update_patrol = time + randomintrange( 1000, 3000 );
+	self.bot.update_toss = time + randomintrange( 1000, 3000 );
+	self.bot.update_launcher = time + randomintrange( 1000, 3000 );
+	self.bot.update_weapon = time + randomintrange( 1000, 3000 );
+	self.bot.think_interval = 0.1;
+	self.bot.fov = -0.9396;
+	self.bot.threat.entity = undefined;
+	self.bot.threat.position = ( 0, 0, 0 );
+	self.bot.threat.time_first_sight = 0;
+	self.bot.threat.time_recent_sight = 0;
+	self.bot.threat.time_aim_interval = 0;
+	self.bot.threat.time_aim_correct = 0;
+	self.bot.threat.update_riotshield = 0;
+}
+
+bot_main()
+{
+	self endon( "death" );
+	self endon( "disconnect" );
+	level endon( "game_ended" );
+
+	self thread bot_wakeup_think();
+	self thread bot_damage_think();
+	self thread bot_reset_flee_goal();
+
+	for ( ;; )
+	{
+		self waittill( "wakeup", damage, attacker, direction );
+		if( self isremotecontrolling())
+		{
+			continue;
+		}
+		else
+		{
+			self bot_combat_think( damage, attacker, direction );
+			self bot_update_follow_host();
+			self bot_update_lookat();
+			if(is_true(level.using_bot_revive_logic))
+			{
+				self bot_revive_teammates();
+			}
+			self bot_pickup_powerup();
+		}	
+	}
+}
+
+bot_wakeup_think()
+{
+	self endon( "death" );
+	self endon( "disconnect" );
+	level endon( "game_ended" );
+	for ( ;; )
+	{
+		wait self.bot.think_interval;
+		self notify( "wakeup" );
+	}
+}
+
+bot_damage_think()
+{
+	self notify( "bot_damage_think" );
+	self endon( "bot_damage_think" );
+	self endon( "disconnect" );
+	level endon( "game_ended" );
+	for ( ;; )
+	{
+		self waittill( "damage", damage, attacker, direction, point, mod, unused1, unused2, unused3, unused4, weapon, flags, inflictor );
+		self.bot.attacker = attacker;
+		self notify( "wakeup", damage, attacker, direction );
+	}
+}
+
+bot_reset_flee_goal()
+{
+	self endon("death");
+	self endon("disconnect");
+	level endon("end_game");
+	while(1)
+	{
+		self CancelGoal("flee");
+		wait 2;
+	}
+}
+
+bot_update_follow_host()
+{
+	self AddGoal(get_players()[0].origin, 100, 1, "wander");
+}
+
+bot_update_lookat()
+{
+	path = 0;
+	if ( isDefined( self getlookaheaddir() ) )
+	{
+		path = 1;
+	}
+	if ( !path && getTime() > self.bot.update_idle_lookat )
+	{
+		origin = bot_get_look_at();
+		if ( !isDefined( origin ) )
+		{
+			return;
+		}
+		self lookat( origin + vectorScale( ( 0, 0, 1 ), 16 ) );
+		self.bot.update_idle_lookat = getTime() + randomintrange( 1500, 3000 );
+	}
+	else if ( path && self.bot.update_idle_lookat > 0 )
+	{
+		self clearlookat();
+		self.bot.update_idle_lookat = 0;
+	}
+}
+
+bot_get_look_at()
+{
+	enemy = bot_get_closest_enemy( self.origin );
+	if ( isDefined( enemy ) )
+	{
+		node = getvisiblenode( self.origin, enemy.origin );
+		if ( isDefined( node ) && distancesquared( self.origin, node.origin ) > 1024 )
+		{
+			return node.origin;
+		}
+	}
+	spawn = self getgoal( "wander" );
+	if ( isDefined( spawn ) )
+	{
+		node = getvisiblenode( self.origin, spawn );
+	}
+	if ( isDefined( node ) && distancesquared( self.origin, node.origin ) > 1024 )
+	{
+		return node.origin;
+	}
+	return undefined;
+}
+
+bot_check_player_blocking()
+{
+    self endon("death");
+    self endon("disconnect");
+    level endon("game_ended");
+    
+    while(1)
+    {
+        wait 0.15;
+        
+        if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+            continue;
+            
+        foreach(player in get_players())
+        {
+            if(player == self || !isPlayer(player) || player maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+                continue;
+                
+            distance_sq = DistanceSquared(self.origin, player.origin);
+            if(distance_sq < 1600)
+            {
+                dir = VectorNormalize(self.origin - player.origin);
+                
+                if(!self hasgoal("avoid_player"))
+                {
+                    try_pos = self.origin + (dir * 60);
+                    
+                    if(FindPath(self.origin, try_pos, undefined, 0, 1))
+                    {
+                        self AddGoal(try_pos, 20, 2, "avoid_player");
+                        wait 0.5;
+                        continue;
+                    }
+                    
+                    nearest_node = GetNearestNode(self.origin);
+                    if(isDefined(nearest_node))
+                    {
+                        nodes = GetNodesInRadius(self.origin, 200, 0);
+                        best_node = undefined;
+                        best_dist = 0;
+                        
+                        if(isDefined(nodes) && nodes.size > 0)
+                        {
+                            foreach(node in nodes)
+                            {
+                                if(NodeVisible(nearest_node.origin, node.origin))
+                                {
+                                    node_to_player_dist = Distance(node.origin, player.origin);
+                                    if(node_to_player_dist > best_dist)
+                                    {
+                                        best_node = node;
+                                        best_dist = node_to_player_dist;
+                                    }
+                                }
+                            }
+                            
+                            if(isDefined(best_node))
+                            {
+                                self AddGoal(best_node.origin, 20, 2, "avoid_player");
+                                wait 0.5;
+                                continue;
+                            }
+                        }
+                    }
+                    
+                    if(self IsOnGround())
+                    {
+                        new_pos = self.origin + (dir * 50);
+                        
+                        if(!SightTracePassed(new_pos, new_pos + (0, 0, 30), true, self) && 
+                           SightTracePassed(new_pos, new_pos - (0, 0, 50), false, self))
+                        {
+                            self SetOrigin(new_pos);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                if(self hasgoal("avoid_player"))
+                    self cancelgoal("avoid_player");
+            }
+        }
+    }
+}
+
 array_combine(array1, array2)
 {
     if (!isDefined(array1))

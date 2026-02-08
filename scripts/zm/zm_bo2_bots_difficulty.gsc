@@ -55,17 +55,17 @@ bot_adjust_difficulty_by_round()
 	adjusted_min_fire = max(adjusted_min_fire, 50);
 	adjusted_max_fire = max(adjusted_max_fire, 150);
 	
-	// Apply changes
-	setdvar("bot_MinReactionTime", string(adjusted_min_reaction));
-	setdvar("bot_MaxReactionTime", string(adjusted_max_reaction));
-	setdvar("bot_MinFireTime", string(adjusted_min_fire));
-	setdvar("bot_MaxFireTime", string(adjusted_max_fire));
+	// Apply changes - concatenate with empty string to convert to string
+	setdvar("bot_MinReactionTime", "" + adjusted_min_reaction);
+	setdvar("bot_MaxReactionTime", "" + adjusted_max_reaction);
+	setdvar("bot_MinFireTime", "" + adjusted_min_fire);
+	setdvar("bot_MaxFireTime", "" + adjusted_max_fire);
 	
 	// Adjust yaw speed for better tracking at higher rounds
 	base_yaw = 4.0;
 	adjusted_yaw = base_yaw * difficulty_multiplier;
 	adjusted_yaw = min(adjusted_yaw, 8.0); // Cap at 8
-	setdvar("bot_YawSpeed", string(adjusted_yaw));
+	setdvar("bot_YawSpeed", "" + adjusted_yaw);
 	
 	// Debug output
 	if(GetDvarInt("bo2_zm_bots_debug") == 1)

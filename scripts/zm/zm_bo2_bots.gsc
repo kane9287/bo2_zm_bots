@@ -195,12 +195,17 @@ bot_cleanup_on_disconnect()
 bot_perks()
 {
     self endon("disconnect");
-    level endon("end_game");
-    
-    // Basic perk management for respawns
-    wait 2;  // Wait a bit after spawn
-    
-    // Can add perk restoration logic here if needed
+    self endon("death");
+    wait 1;
+    while(1)
+    {
+        self SetNormalHealth(250);
+        self SetmaxHealth(250);
+        self SetPerk("specialty_flakjacket");
+        self SetPerk("specialty_rof");
+        self SetPerk("specialty_fastreload");
+        self waittill("player_revived");
+    }
 }
 
 bot_set_skill()
@@ -259,4 +264,49 @@ botaction(stance)
             self allowprone(true);
             break;
     }
+}
+
+bot_nearest_node( origin )
+{
+	node = getnearestnode( origin );
+	if ( isDefined( node ) )
+	{
+		return node;
+	}
+	nodes = getnodesinradiussorted( origin, 256, 0, 256 );
+	if ( nodes.size )
+	{
+		return nodes[ 0 ];
+	}
+	return undefined;
+}
+
+bot_pickup_powerup()
+{
+	if(maps\mp\zombies\_zm_powerups::get_powerups(self.origin, 1000).size == 0)
+	{
+		self CancelGoal("powerup");
+		return;
+	}
+	powerups = maps\mp\zombies\_zm_powerups::get_powerups(self.origin, 1000);
+	foreach(powerup in powerups)
+	{
+		if(FindPath(self.origin, powerup.origin, undefined, 0, 1))
+		{
+			self AddGoal(powerup.origin, 25, 2, "powerup");
+			if(self AtGoal("powerup") || Distance(self.origin, powerup.origin) < 50)
+			{
+				self CancelGoal("powerup");
+			}
+			return;
+		}
+	}
+}
+
+// Helper function to get Dvar value with a default
+GetDvarIntDefault(dvarName, defaultValue)
+{
+    if(GetDvar(dvarName) == "")
+        return defaultValue;
+    return GetDvarInt(dvarName);
 }

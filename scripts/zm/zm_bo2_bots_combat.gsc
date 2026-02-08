@@ -2,12 +2,19 @@
 #include common_scripts\utility;
 #include maps\mp\_utility;
 #include scripts\zm\zm_bo2_bots;
-#include scripts\zm\zm_bo2_bots_utility; // Added this line
+#include scripts\zm\zm_bo2_bots_utility;
 
 bot_combat_think( damage, attacker, direction )
 {
 	self allowattack( 0 );
 	self pressads( 0 );
+	
+	// Initialize AI enhancement variables
+	if(!isDefined(self.bot.entity_cache_time))
+		self.bot.entity_cache_time = 0;
+	if(!isDefined(self.bot.last_follow_pos))
+		self.bot.last_follow_pos = (0,0,0);
+	
 	for ( ;; )
 	{
 		if ( !bot_can_do_combat() )
@@ -16,6 +23,10 @@ bot_combat_think( damage, attacker, direction )
 		}
 		if(self atgoal("flee"))
 			self cancelgoal("flee");
+			
+		// Check if bot is overwhelmed and needs to panic
+		self bot_check_overwhelmed();
+		
 		//FLEE CODE. IF ZOMBIE IS CLOSE TO BOT, BOT WILL TRY TO FIND A PLACE TO RUN AWAY
 		//LOOKING FOR ANOTHER ALTERNATIVE IF DOORS ARE CLOSED AND THE BOT CAN NOT REACH SAID PATH.
 		if(Distance(self.origin, self.bot.threat.position) <= 75 || isdefined(damage))
@@ -34,7 +45,9 @@ bot_combat_think( damage, attacker, direction )
 		}
 		if(self GetCurrentWeapon() == "none")
 			return;
-		sight = self bot_best_enemy();
+			
+		// Use cached zombie list for better performance
+		sight = self bot_best_enemy_enhanced();
 		if(!isdefined(self.bot.threat.entity))
 			return;
 		if ( threat_dead() )
@@ -63,7 +76,175 @@ bot_combat_think( damage, attacker, direction )
 		{
 			self bot_revive_teammates();
 		}
-		wait 0.05; //fu difficulty
+		
+		// Maintain formation with other bots
+		self bot_maintain_formation();
+		
+		wait 0.05;
+	}
+}
+
+// NEW: Check if bot is overwhelmed by zombies
+bot_check_overwhelmed()
+{
+	// Count nearby zombies using cached list
+	zombies = self bot_get_cached_zombies();
+	nearby_count = 0;
+	
+	foreach(zombie in zombies)
+	{
+		if(Distance(self.origin, zombie.origin) < 200)
+			nearby_count++;
+	}
+	
+	// If 5+ zombies close, prioritize escape
+	if(nearby_count >= 5)
+	{
+		self.bot.panic_mode = true;
+		self.bot.panic_time = GetTime() + 3000;
+		
+		// Find furthest node
+		nodes = getnodesinradiussorted(self.origin, 512, 0);
+		if(nodes.size > 0)
+		{
+			// Take farthest node
+			escape_node = nodes[nodes.size - 1];
+			self AddGoal(escape_node.origin, 50, 5, "panic"); // Highest priority
+		}
+	}
+	else if(isDefined(self.bot.panic_mode) && GetTime() > self.bot.panic_time)
+	{
+		self.bot.panic_mode = undefined;
+		self cancelgoal("panic");
+	}
+}
+
+// NEW: Cache zombie list for performance
+bot_get_cached_zombies()
+{
+	if(!isDefined(self.bot.entity_cache_time) || GetTime() > self.bot.entity_cache_time)
+	{
+		// Update cache every 0.5 seconds instead of every frame
+		self.bot.cached_zombies = getaispeciesarray(level.zombie_team, "all");
+		self.bot.entity_cache_time = GetTime() + 500;
+	}
+	
+	return self.bot.cached_zombies;
+}
+
+// NEW: Enhanced enemy selection with threat scoring
+bot_best_enemy_enhanced()
+{
+	enemies = self bot_get_cached_zombies();
+	
+	if(!isDefined(enemies) || enemies.size == 0)
+		return undefined;
+		
+	best_enemy = undefined;
+	best_score = -1;
+	
+	foreach(enemy in enemies)
+	{
+		if(threat_should_ignore(enemy))
+			continue;
+			
+		if(!self botsighttracepassed(enemy))
+			continue;
+			
+		// Calculate threat score
+		score = bot_calculate_threat_score(enemy);
+		
+		if(score > best_score)
+		{
+			best_score = score;
+			best_enemy = enemy;
+		}
+	}
+	
+	if(isDefined(best_enemy))
+	{
+		self.bot.threat.entity = best_enemy;
+		self.bot.threat.time_first_sight = GetTime();
+		self.bot.threat.time_recent_sight = GetTime();
+		self.bot.threat.dot = bot_dot_product(best_enemy.origin);
+		self.bot.threat.position = best_enemy.origin;
+		self.bot.threat.aim_target = bot_update_aim(4);
+		self.bot.threat.time_aim_interval = randomintrange(40, 70);
+		self.bot.threat.time_aim_correct = GetTime() + self.bot.threat.time_aim_interval;
+	}
+	
+	return best_enemy;
+}
+
+// NEW: Calculate threat priority score
+bot_calculate_threat_score(zombie)
+{
+	score = 0;
+	dist = Distance(self.origin, zombie.origin);
+	
+	// Distance priority (closer = higher threat)
+	score += (1000 - dist) * 2;
+	
+	// Special zombie types (if your mod has them)
+	if(isDefined(zombie.is_brutus) && zombie.is_brutus)
+		score += 500;
+	
+	// Zombies attacking downed teammates
+	players = get_players();
+	foreach(player in players)
+	{
+		if(Distance(player.origin, zombie.origin) < 100 && 
+		   player maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+			score += 300;
+	}
+	
+	return score;
+}
+
+// NEW: Maintain formation to prevent clustering
+bot_maintain_formation()
+{
+	// Only check every few seconds
+	if(!isDefined(self.bot.formation_check_time) || GetTime() < self.bot.formation_check_time)
+		return;
+		
+	self.bot.formation_check_time = GetTime() + 2000;
+	
+	// Get other bots
+	other_bots = [];
+	foreach(player in get_players())
+	{
+		if(player != self && isDefined(player.bot))
+			other_bots[other_bots.size] = player;
+	}
+	
+	// Check distance to nearest bot
+	if(other_bots.size > 0)
+	{
+		closest_dist = 999999;
+		foreach(bot in other_bots)
+		{
+			dist = Distance(self.origin, bot.origin);
+			if(dist < closest_dist)
+				closest_dist = dist;
+		}
+		
+		// If too close (within 150 units), add spread
+		if(closest_dist < 150 && !self hasgoal("spread"))
+		{
+			// Add random offset to wander goal
+			offset = (randomintrange(-200, 200), randomintrange(-200, 200), 0);
+			wander_goal = self GetGoal("wander");
+			if(isDefined(wander_goal))
+			{
+				spread_goal = wander_goal + offset;
+				self AddGoal(spread_goal, 100, 1, "spread");
+			}
+		}
+		else if(closest_dist >= 150 && self hasgoal("spread"))
+		{
+			self cancelgoal("spread");
+		}
 	}
 }
 
@@ -88,7 +269,7 @@ bot_safely_interact_with_doors()
 			continue;
 			
 		dist = Distance(self.origin, door.origin);
-		if(dist < closest_dist && dist < 80) // Only consider doors within 80 units
+		if(dist < closest_dist && dist < 80)
 		{
 			closest_dist = dist;
 			closest_door = door;
@@ -127,7 +308,7 @@ bot_safely_use_mystery_box()
 			continue;
 			
 		dist = Distance(self.origin, box.origin);
-		if(dist < closest_dist && dist < 80) // Only consider boxes within 80 units
+		if(dist < closest_dist && dist < 80)
 		{
 			closest_dist = dist;
 			closest_box = box;
@@ -207,14 +388,17 @@ array_combine(array1, array2)
 	return combined;
 }
 
-bot_combat_main() //checked partially changed to match cerberus output changed at own discretion
+bot_combat_main()
 {
 	weapon = self getcurrentweapon();
 	currentammo = self getweaponammoclip( weapon ) + self getweaponammostock( weapon );
-	if ( !currentammo )
+	
+	// NEW: Check if should conserve ammo
+	if(!currentammo || self bot_should_conserve_ammo())
 	{
 		return;
 	}
+	
 	time = getTime();
 	if ( !self bot_should_hip_fire() && self.bot.threat.dot > 0.96 )
 	{
@@ -257,7 +441,50 @@ bot_combat_main() //checked partially changed to match cerberus output changed a
 	}
 }
 
-bot_combat_dead( damage ) //checked matches cerberus output
+// NEW: Ammo conservation logic
+bot_should_conserve_ammo()
+{
+	weapon = self GetCurrentWeapon();
+	stock = self GetWeaponAmmoStock(weapon);
+	max_stock = WeaponMaxAmmo(weapon);
+	
+	if(!isDefined(max_stock) || max_stock == 0)
+		return false;
+		
+	ammo_percentage = stock / max_stock;
+	
+	// Conserve if below 30% and far from wallbuy
+	if(ammo_percentage < 0.3)
+	{
+		// Check if there's a wallbuy nearby
+		if(!isDefined(level._spawned_wallbuys))
+			return true;
+			
+		closest_wallbuy_dist = 999999;
+		foreach(wallbuy in level._spawned_wallbuys)
+		{
+			if(!isDefined(wallbuy) || !isDefined(wallbuy.trigger_stub))
+				continue;
+				
+			// Check if wallbuy matches our weapon
+			if(wallbuy.trigger_stub.zombie_weapon_upgrade == weapon ||
+			   maps\mp\zombies\_zm_weapons::get_upgrade_weapon(wallbuy.trigger_stub.zombie_weapon_upgrade) == weapon)
+			{
+				dist = Distance(self.origin, wallbuy.origin);
+				if(dist < closest_wallbuy_dist)
+					closest_wallbuy_dist = dist;
+			}
+		}
+		
+		// If no wallbuy within 1000 units, conserve ammo
+		if(closest_wallbuy_dist > 1000)
+			return true;
+	}
+	
+	return false;
+}
+
+bot_combat_dead( damage )
 {
 	wait 0.1;
 	self allowattack( 0 );
@@ -265,7 +492,7 @@ bot_combat_dead( damage ) //checked matches cerberus output
 	self bot_clear_enemy();
 }
 
-bot_should_hip_fire() //checked matches cerberus output
+bot_should_hip_fire()
 {
 	enemy = self.bot.threat.entity;
 	weapon = self getcurrentweapon();
@@ -313,7 +540,7 @@ bot_should_hip_fire() //checked matches cerberus output
 	return distsq < ( distcheck * distcheck );
 }
 
-bot_patrol_near_enemy( damage, attacker, direction ) //checked matches cerberus output
+bot_patrol_near_enemy( damage, attacker, direction )
 {
 	if ( isDefined( attacker ) )
 	{
@@ -350,7 +577,7 @@ bot_patrol_near_enemy( damage, attacker, direction ) //checked matches cerberus 
 	}
 }
 
-bot_lookat_entity( entity ) //checked matches cerberus output
+bot_lookat_entity( entity )
 {
 	if ( isplayer( entity ) && entity getstance() != "prone" )
 	{
@@ -372,7 +599,7 @@ bot_lookat_entity( entity ) //checked matches cerberus output
 	}
 }
 
-bot_update_lookat( origin, frac ) //checked matches cerberus output
+bot_update_lookat( origin, frac )
 {
 	angles = vectorToAngles( origin - self.origin );
 	right = anglesToRight( angles );
@@ -394,7 +621,7 @@ bot_update_lookat( origin, frac ) //checked matches cerberus output
 	self lookat( end );
 }
 
-bot_update_aim( frames ) //checked matches cerberus output
+bot_update_aim( frames )
 {
 	ent = self.bot.threat.entity;
 	prediction = self predictposition( ent, frames );
@@ -408,7 +635,7 @@ bot_update_aim( frames ) //checked matches cerberus output
 	return torso;
 }
 
-bot_on_target( aim_target, radius ) //checked matches cerberus output
+bot_on_target( aim_target, radius )
 {
 	angles = self getplayerangles();
 	forward = anglesToForward( angles );
@@ -422,12 +649,12 @@ bot_on_target( aim_target, radius ) //checked matches cerberus output
 	return 0;
 }
 
-bot_get_aim_error() //checked changed at own discretion
+bot_get_aim_error()
 {
 	return 1;
 }
 
-bot_has_lmg() //checked changed at own discretion
+bot_has_lmg()
 {
 	if ( bot_has_weapon_class( "mg" ) )
 	{
@@ -436,7 +663,7 @@ bot_has_lmg() //checked changed at own discretion
 	return 0;
 }
 
-bot_has_weapon_class( class ) //checked changed at own discretion
+bot_has_weapon_class( class )
 {
 	if ( self isreloading() )
 	{
@@ -454,7 +681,7 @@ bot_has_weapon_class( class ) //checked changed at own discretion
 	return 0;
 }
 
-bot_can_reload() //checked changed to match cerberus output
+bot_can_reload()
 {
 	weapon = self getcurrentweapon();
 	if ( weapon == "none" )
@@ -472,7 +699,7 @@ bot_can_reload() //checked changed to match cerberus output
 	return 1;
 }
 
-bot_best_enemy() //checked partially changed to match cerberus output did not change while loop to foreach see github for more info
+bot_best_enemy()
 {
 	enemies = getaispeciesarray( level.zombie_team, "all" );
 	enemies = arraysort( enemies, self.origin );
@@ -491,172 +718,11 @@ bot_best_enemy() //checked partially changed to match cerberus output did not ch
 			self.bot.threat.time_recent_sight = getTime();
 			self.bot.threat.dot = bot_dot_product( enemies[ i ].origin );
 			self.bot.threat.position = enemies[ i ].origin;
-			return 1;
+			self.bot.threat.aim_target = bot_update_aim( 4 );
+			self.bot.threat.time_aim_interval = randomintrange( 40, 70 );
+			self.bot.threat.time_aim_correct = getTime() + self.bot.threat.time_aim_interval;
+			return;
 		}
 		i++;
 	}
-	return 0;
-}
-
-bot_weapon_ammo_frac() //checked matches cerberus output
-{
-	if ( self isreloading() || self isswitchingweapons() )
-	{
-		return 0;
-	}
-	weapon = self getcurrentweapon();
-	if ( weapon == "none" )
-	{
-		return 1;
-	}
-	total = weaponclipsize( weapon );
-	if ( total <= 0 )
-	{
-		return 1;
-	}
-	current = self getweaponammoclip( weapon );
-	return current / total;
-}
-
-bot_select_weapon() //checked partially changed to match cerberus output did not change while loop to foreach see github for more info
-{
-	if ( self isthrowinggrenade() || self isswitchingweapons() || self isreloading() )
-	{
-		return;
-	}
-	if ( !self isonground() )
-	{
-		return;
-	}
-	ent = self.bot.threat.entity;
-	if ( !isDefined( ent ) )
-	{
-		return;
-	}
-	primaries = self getweaponslistprimaries();
-	weapon = self getcurrentweapon();
-	stock = self getweaponammostock( weapon );
-	clip = self getweaponammoclip( weapon );
-	if ( weapon == "none" )
-	{
-		return;
-	}
-	if ( weapon == "fhj18_mp" && !target_istarget( ent ) )
-	{
-		foreach ( primary in primaries )
-		{
-			if ( primary != weapon )
-			{
-				self switchtoweapon( primary );
-				return;
-			}
-		}
-		return;
-	}
-	if ( !clip )
-	{
-		if ( stock )
-		{
-			if ( weaponhasattachment( weapon, "fastreload" ) )
-			{
-				return;
-			}
-		}
-		i = 0;
-		while ( i < primaries.size )
-		{
-			if ( primaries[ i ] == weapon || primaries[ i ] == "fhj18_mp" )
-			{
-				i++;
-				continue;
-			}
-			if ( self getweaponammoclip( primaries[ i ] ) )
-			{
-				self switchtoweapon( primaries[ i ] );
-				return;
-			}
-			i++;
-		}
-		if ( self bot_has_lmg() )
-		{
-			i = 0;
-			while ( i < primaries.size )
-			{
-				if ( primaries[ i ] == weapon || primaries[ i ] == "fhj18_mp" )
-				{
-					i++;
-					continue;
-				}
-				else
-				{
-					self switchtoweapon( primaries[ i ] );
-					return;
-				}
-				i++;
-			}
-		}
-	}
-}
-
-bot_can_do_combat() //checked matches cerberus output
-{
-	if ( self ismantling() || self isonladder() )
-	{
-		return 0;
-	}
-	return 1;
-}
-
-bot_dot_product( origin ) //checked matches cerberus output
-{
-	angles = self getplayerangles();
-	forward = anglesToForward( angles );
-	delta = origin - self getplayercamerapos();
-	delta = vectornormalize( delta );
-	dot = vectordot( forward, delta );
-	return dot;
-}
-
-threat_should_ignore( entity ) //checked matches cerberus output
-{
-	return 0;
-}
-
-bot_clear_enemy() //checked matches cerberus output
-{
-	self clearlookat();
-	self.bot.threat.entity = undefined;
-}
-
-bot_has_enemy() //checked changed at own discretion
-{
-	if ( isDefined( self.bot.threat.entity ) )
-	{
-		return 1;
-	}
-	return 0;
-}
-
-threat_dead() //checked changed at own discretion
-{
-	if ( self bot_has_enemy() )
-	{
-		ent = self.bot.threat.entity;
-		if ( !isalive( ent ) )
-		{
-			return 1;
-		}
-		return 0;
-	}
-	return 0;
-}
-
-threat_is_player() //checked changed at own discretion
-{
-	ent = self.bot.threat.entity;
-	if ( isDefined( ent ) && isplayer( ent ) )
-	{
-		return 1;
-	}
-	return 0;
 }

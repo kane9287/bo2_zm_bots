@@ -138,7 +138,7 @@ bot_best_enemy_enhanced()
 	enemies = self bot_get_cached_zombies();
 	
 	if(!isDefined(enemies) || enemies.size == 0)
-		return undefined;
+		return 0;
 		
 	best_enemy = undefined;
 	best_score = -1;
@@ -168,12 +168,10 @@ bot_best_enemy_enhanced()
 		self.bot.threat.time_recent_sight = GetTime();
 		self.bot.threat.dot = bot_dot_product(best_enemy.origin);
 		self.bot.threat.position = best_enemy.origin;
-		self.bot.threat.aim_target = bot_update_aim(4);
-		self.bot.threat.time_aim_interval = randomintrange(40, 70);
-		self.bot.threat.time_aim_correct = GetTime() + self.bot.threat.time_aim_interval;
+		return 1;
 	}
 	
-	return best_enemy;
+	return 0;
 }
 
 // NEW: Calculate threat priority score
@@ -400,6 +398,7 @@ bot_combat_main()
 	}
 	
 	time = getTime();
+	ads = 0;
 	if ( !self bot_should_hip_fire() && self.bot.threat.dot > 0.96 )
 	{
 		ads = 1;
@@ -718,11 +717,172 @@ bot_best_enemy()
 			self.bot.threat.time_recent_sight = getTime();
 			self.bot.threat.dot = bot_dot_product( enemies[ i ].origin );
 			self.bot.threat.position = enemies[ i ].origin;
-			self.bot.threat.aim_target = bot_update_aim( 4 );
-			self.bot.threat.time_aim_interval = randomintrange( 40, 70 );
-			self.bot.threat.time_aim_correct = getTime() + self.bot.threat.time_aim_interval;
-			return;
+			return 1;
 		}
 		i++;
 	}
+	return 0;
+}
+
+bot_weapon_ammo_frac()
+{
+	if ( self isreloading() || self isswitchingweapons() )
+	{
+		return 0;
+	}
+	weapon = self getcurrentweapon();
+	if ( weapon == "none" )
+	{
+		return 1;
+	}
+	total = weaponclipsize( weapon );
+	if ( total <= 0 )
+	{
+		return 1;
+	}
+	current = self getweaponammoclip( weapon );
+	return current / total;
+}
+
+bot_select_weapon()
+{
+	if ( self isthrowinggrenade() || self isswitchingweapons() || self isreloading() )
+	{
+		return;
+	}
+	if ( !self isonground() )
+	{
+		return;
+	}
+	ent = self.bot.threat.entity;
+	if ( !isDefined( ent ) )
+	{
+		return;
+	}
+	primaries = self getweaponslistprimaries();
+	weapon = self getcurrentweapon();
+	stock = self getweaponammostock( weapon );
+	clip = self getweaponammoclip( weapon );
+	if ( weapon == "none" )
+	{
+		return;
+	}
+	if ( weapon == "fhj18_mp" && !target_istarget( ent ) )
+	{
+		foreach ( primary in primaries )
+		{
+			if ( primary != weapon )
+			{
+				self switchtoweapon( primary );
+				return;
+			}
+		}
+		return;
+	}
+	if ( !clip )
+	{
+		if ( stock )
+		{
+			if ( weaponhasattachment( weapon, "fastreload" ) )
+			{
+				return;
+			}
+		}
+		i = 0;
+		while ( i < primaries.size )
+		{
+			if ( primaries[ i ] == weapon || primaries[ i ] == "fhj18_mp" )
+			{
+				i++;
+				continue;
+			}
+			if ( self getweaponammoclip( primaries[ i ] ) )
+			{
+				self switchtoweapon( primaries[ i ] );
+				return;
+			}
+			i++;
+		}
+		if ( self bot_has_lmg() )
+		{
+			i = 0;
+			while ( i < primaries.size )
+			{
+				if ( primaries[ i ] == weapon || primaries[ i ] == "fhj18_mp" )
+				{
+					i++;
+					continue;
+				}
+				else
+				{
+					self switchtoweapon( primaries[ i ] );
+					return;
+				}
+				i++;
+			}
+		}
+	}
+}
+
+bot_can_do_combat()
+{
+	if ( self ismantling() || self isonladder() )
+	{
+		return 0;
+	}
+	return 1;
+}
+
+bot_dot_product( origin )
+{
+	angles = self getplayerangles();
+	forward = anglesToForward( angles );
+	delta = origin - self getplayercamerapos();
+	delta = vectornormalize( delta );
+	dot = vectordot( forward, delta );
+	return dot;
+}
+
+threat_should_ignore( entity )
+{
+	return 0;
+}
+
+bot_clear_enemy()
+{
+	self clearlookat();
+	self.bot.threat.entity = undefined;
+}
+
+bot_has_enemy()
+{
+	if ( isDefined( self.bot.threat.entity ) )
+	{
+		return 1;
+	}
+	return 0;
+}
+
+threat_dead()
+{
+	if ( self bot_has_enemy() )
+	{
+		ent = self.bot.threat.entity;
+		if ( !isalive( ent ) )
+		{
+			return 1;
+		}
+		return 0;
+	}
+	return 0;
+}
+
+threat_is_player()
+{
+	ent = self.bot.threat.entity;
+	if ( isDefined( ent ) && isplayer( ent ) )
+	{
+		return 1;
+	}
+	return 0;
 }

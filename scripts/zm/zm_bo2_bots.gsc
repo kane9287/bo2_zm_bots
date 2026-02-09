@@ -39,55 +39,80 @@ array_combine(array1, array2)
 
 init()
 {
-    // level.player_starting_points = 550 * 400;
-    bot_set_skill();
-    
-    
+	level.player_starting_points = 550 + 400;
+	bot_set_skill();
+	
+	// Add debug
+	iprintln("^3Waiting for initial blackscreen...");
+	flag_wait("initial_blackscreen_passed");
+	iprintln("^2Blackscreen passed, continuing bot setup...");
 
-    // Add debug
-    iprintln("^3Waiting for initial blackscreen...");
-    flag_wait("initial_blackscreen_passed");
-    iprintln("^2Blackscreen passed, continuing bot setup...");
+	if(!isdefined(level.using_bot_weapon_logic))
+		level.using_bot_weapon_logic = 1;
+	if(!isdefined(level.using_bot_revive_logic))
+		level.using_bot_revive_logic = 1;
 
-    if(!isdefined(level.using_bot_weapon_logic))
-        level.using_bot_weapon_logic = 1;
-    if(!isdefined(level.using_bot_revive_logic))
-        level.using_bot_revive_logic = 1;
+	// Initialize box and PAP usage variables
+	level.box_in_use_by_bot = undefined;
+	level.last_bot_box_interaction_time = 0;
+	level.pap_in_use_by_bot = undefined;
+	level.last_bot_pap_time = 0;
+	level.generator_in_use_by_bot = undefined;
+	level.last_bot_generator_time = 0;
 
-    // Initialize box and PAP usage variables
-    level.box_in_use_by_bot = undefined;
-    level.last_bot_box_interaction_time = 0;
-    level.pap_in_use_by_bot = undefined;
-    level.last_bot_pap_time = 0;
-    level.generator_in_use_by_bot = undefined;
-    level.last_bot_generator_time = 0;
+	// Max total players (humans + bots) - PREVENTS SPAWNING 8 BOTS
+	level.max_total_players = 4;
 
-    // Setup bot tracking array
-    if (!isdefined(level.bots))
-        level.bots = [];
+	// Monitor for human players joining
+	level thread monitor_player_count();
 
-    bot_amount = GetDvarIntDefault("bo2_zm_bots_count", 8);
-    // if(bot_amount > (8-get_players().size))
-    //     bot_amount = 8 - get_players().size;
+	// Fill remaining slots with bots
+	bot_amount = GetDvarIntDefault("bo2_zm_bots_count", 3);
+	current_player_count = get_players().size;
+	available_slots = level.max_total_players - current_player_count;
+	
+	if(bot_amount > available_slots)
+		bot_amount = available_slots;
 
-    iprintln("^2Spawning " + bot_amount + " bots...");
+	iprintln("^2Spawning " + bot_amount + " bots...");
 
-    for(i=0; i<bot_amount; i++)
-    {
-        iprintln("^3Spawning bot " + (i+1));
-        // Track spawned bot entities
-        bot_entity = spawn_bot();
-        level.bots[level.bots.size] = bot_entity;
-        wait 1; // Add a brief pause between bot spawns
-    }
+	for(i=0; i<bot_amount; i++)
+	{
+		iprintln("^3Spawning bot " + (i+1));
+		spawn_bot();
+		wait 1;
+	}
 
-    // Initialize map specific logic
-    if(level.script == "zm_tomb")
-    {
-        level thread scripts\zm\zm_bo2_bots_origins::init();
-    }
+	if(level.script == "zm_tomb")
+	{
+		level thread scripts\zm\zm_bo2_bots_origins::init();
+	}
 
-    iprintln("^2Bot initialization complete");
+	iprintln("^2Bot initialization complete");
+}
+
+monitor_player_count()
+{
+	level endon("end_game");
+	
+	while(1)
+	{
+		wait 5;
+		
+		players = get_players();
+		if(players.size > level.max_total_players)
+		{
+			foreach(player in players)
+			{
+				if(isDefined(player.pers["isBot"]) && player.pers["isBot"])
+				{
+					iprintln("^3Kicking bot to make room for human player");
+					kick(player getEntityNumber());
+					break;
+				}
+			}
+		}
+	}
 }
 
 bot_set_skill()
@@ -675,34 +700,39 @@ bot_monitor_box_animation(box)
 
 spawn_bot()
 {
-    iprintln("^3Adding test client...");
-    bot = addtestclient();
-    if(!isDefined(bot))
-    {
-        iprintln("^1Failed to add test client!");
-        return;
-    }
-    
-    iprintln("^3Waiting for bot to spawn...");
-    bot waittill("spawned_player");
-    iprintln("^2Bot spawned, configuring...");
-    
-    bot thread maps\mp\zombies\_zm::spawnspectator();
-    if(isDefined(bot))
-    {
-        bot.pers["isBot"] = 1;
-        bot thread onspawn();
-    }
-    
-    wait 1;
-    iprintln("^3Spawning bot as player...");
-    
-    if(isDefined(level.spawnplayer))
-        bot [[level.spawnplayer]]();
-    else
-        iprintln("^1ERROR: level.spawnplayer not defined!");
-}
+	if(get_players().size >= level.max_total_players)
+	{
+		iprintln("^1Max total players reached (" + level.max_total_players + ")");
+		return;
+	}
 
+	iprintln("^3Adding test client...");
+	bot = addtestclient();
+	if(!isDefined(bot))
+	{
+		iprintln("^1Failed to add test client!");
+		return;
+	}
+	
+	iprintln("^3Waiting for bot to spawn...");
+	bot waittill("spawned_player");
+	iprintln("^2Bot spawned, configuring...");
+	
+	bot thread maps\mp\zombies\_zm::spawnspectator();
+	if(isDefined(bot))
+	{
+		bot.pers["isBot"] = 1;
+		bot thread onspawn();
+	}
+	
+	wait 1;
+	iprintln("^3Spawning bot as player...");
+	
+	if(isDefined(level.spawnplayer))
+		bot [[level.spawnplayer]]();
+	else
+		iprintln("^1ERROR: level.spawnplayer not defined!");
+}
 bot_spawn_init()
 {
 	if(level.script == "zm_tomb")

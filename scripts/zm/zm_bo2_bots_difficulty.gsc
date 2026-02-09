@@ -37,11 +37,13 @@ bot_adjust_difficulty_by_round()
 	// Cap at round 30 for maximum difficulty
 	difficulty_multiplier = min(level.round_number / 30.0, 1.5);
 	
-	// Base values (round 1)
-	base_min_reaction = 40;
-	base_max_reaction = 70;
-	base_min_fire = 100;
-	base_max_fire = 250;
+	// IMPROVED Base values - Much better starting skill
+	// Old values: 40-70ms reaction, 100-250ms fire
+	// New values: Faster reactions, quicker shooting
+	base_min_reaction = 25;  // Was 40 - Now 37.5% faster
+	base_max_reaction = 45;  // Was 70 - Now 35% faster
+	base_min_fire = 60;      // Was 100 - Now 40% faster
+	base_max_fire = 150;     // Was 250 - Now 40% faster
 	
 	// Adjusted values (faster reactions at higher rounds)
 	adjusted_min_reaction = int(base_min_reaction / difficulty_multiplier);
@@ -49,11 +51,11 @@ bot_adjust_difficulty_by_round()
 	adjusted_min_fire = int(base_min_fire / difficulty_multiplier);
 	adjusted_max_fire = int(base_max_fire / difficulty_multiplier);
 	
-	// Don't go too low
-	adjusted_min_reaction = max(adjusted_min_reaction, 20);
-	adjusted_max_reaction = max(adjusted_max_reaction, 35);
-	adjusted_min_fire = max(adjusted_min_fire, 50);
-	adjusted_max_fire = max(adjusted_max_fire, 150);
+	// Don't go too low (but lower than before for max skill)
+	adjusted_min_reaction = max(adjusted_min_reaction, 15);  // Was 20
+	adjusted_max_reaction = max(adjusted_max_reaction, 25);  // Was 35
+	adjusted_min_fire = max(adjusted_min_fire, 35);          // Was 50
+	adjusted_max_fire = max(adjusted_max_fire, 100);         // Was 150
 	
 	// Apply changes - concatenate with empty string to convert to string
 	setdvar("bot_MinReactionTime", "" + adjusted_min_reaction);
@@ -61,10 +63,10 @@ bot_adjust_difficulty_by_round()
 	setdvar("bot_MinFireTime", "" + adjusted_min_fire);
 	setdvar("bot_MaxFireTime", "" + adjusted_max_fire);
 	
-	// Adjust yaw speed for better tracking at higher rounds
-	base_yaw = 4.0;
+	// IMPROVED Yaw speed for better tracking
+	base_yaw = 6.0;  // Was 4.0 - Now 50% faster turning
 	adjusted_yaw = base_yaw * difficulty_multiplier;
-	adjusted_yaw = min(adjusted_yaw, 8.0); // Cap at 8
+	adjusted_yaw = min(adjusted_yaw, 10.0); // Cap at 10 (was 8)
 	setdvar("bot_YawSpeed", "" + adjusted_yaw);
 	
 	// Debug output
@@ -73,5 +75,6 @@ bot_adjust_difficulty_by_round()
 		iprintln("^3Bot Difficulty Adjusted for Round " + level.round_number);
 		iprintln("^2Reaction: " + adjusted_min_reaction + "-" + adjusted_max_reaction + "ms");
 		iprintln("^2Fire Time: " + adjusted_min_fire + "-" + adjusted_max_fire + "ms");
+		iprintln("^2Yaw Speed: " + adjusted_yaw);
 	}
 }

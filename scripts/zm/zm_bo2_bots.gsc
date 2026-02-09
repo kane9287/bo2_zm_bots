@@ -1859,7 +1859,7 @@ bot_update_follow_host()
 	//if(distance(goal, self.origin) > 100)
 	//	return;
 	//if(distance(self.origin, get_players[0].origin) > 3000)
-	self AddGoal(get_players()[0].origin, 100, 1, "wander");
+	self AddGoal(get_players()[0].origin, 800, 1, "wander");
 	//self lookat(get_players()[0].origin);
 	//else
 	//	self AddGoal()	

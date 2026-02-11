@@ -80,12 +80,27 @@ repair_barrier_loop(barrier)
     if (!isDefined(barrier) || !isDefined(barrier.zbarrier))
         return;
 
-    max_ticks = 15;  // Max repair attempts per cycle
-    ticks = 0;
+    max_attempts = 15;
+    attempts = 0;
 
-    log_barrier("  REPAIR LOOP START: max_ticks=" + max_ticks);
+    log_barrier("  REPAIR LOOP START: max_attempts=" + max_attempts);
+    
+    // Store original position
+    original_pos = self.origin;
+    original_angles = self.angles;
+    
+    // Move bot very close to barrier if not already there
+    repair_distance = Distance(self.origin, barrier.origin);
+    if(repair_distance > 75)
+    {
+        log_barrier("    Moving bot closer to barrier (was " + int(repair_distance) + " units away)");
+        // Position bot at barrier location with slight offset to avoid clipping
+        offset_pos = barrier.origin + (0, 0, 5);
+        self SetOrigin(offset_pos);
+        wait 0.1;
+    }
 
-    while (ticks < max_ticks && !barrier_fully_repaired(barrier))
+    while (attempts < max_attempts && !barrier_fully_repaired(barrier))
     {
         // Log chunk health before repair attempt
         chunk_str = "";
@@ -95,15 +110,27 @@ repair_barrier_loop(barrier)
             if (i < barrier.zbarrier.chunk_health.size - 1)
                 chunk_str += ",";
         }
-        log_barrier("    TICK " + ticks + " BEFORE: [" + chunk_str + "]");
+        log_barrier("    ATTEMPT " + attempts + " BEFORE: [" + chunk_str + "]");
 
-        // Fire repair events
-        barrier.zbarrier notify("repair_board", self);
-
+        // Simulate holding use button
+        self UseButtonPressed();
+        
+        // Look directly at barrier center
+        self lookat(barrier.origin);
+        
+        // Fire repair events using multiple methods for maximum compatibility
         if (isDefined(barrier.unitrigger_stub))
         {
+            // This is the most reliable method for BO2 barriers
             barrier.unitrigger_stub notify("trigger", self);
             log_barrier("      Fired unitrigger_stub trigger");
+            
+            // Try calling the trigger function directly if it exists
+            if(isDefined(barrier.unitrigger_stub.trigger_func))
+            {
+                self thread [[barrier.unitrigger_stub.trigger_func]](barrier.unitrigger_stub);
+                log_barrier("      Called trigger_func directly");
+            }
         }
         else if (isDefined(barrier.trigger_use))
         {
@@ -112,11 +139,15 @@ repair_barrier_loop(barrier)
         }
         else
         {
-            log_barrier("      No trigger found");
+            log_barrier("      No standard trigger found, using fallback");
         }
+        
+        // Always fire these for maximum compatibility
+        barrier notify("repair_board", self);
+        barrier.zbarrier notify("repair_board", self);
 
-        // Wait for game to process
-        wait 0.3;
+        // Longer wait for game to process the repair
+        wait 0.5;
 
         // Log chunk health after repair attempt
         chunk_str = "";
@@ -126,15 +157,19 @@ repair_barrier_loop(barrier)
             if (i < barrier.zbarrier.chunk_health.size - 1)
                 chunk_str += ",";
         }
-        log_barrier("    TICK " + ticks + " AFTER:  [" + chunk_str + "]");
+        log_barrier("    ATTEMPT " + attempts + " AFTER:  [" + chunk_str + "]");
 
-        ticks++;
+        attempts++;
     }
+    
+    // Restore original position and angles
+    self SetOrigin(original_pos);
+    self SetPlayerAngles(original_angles);
 
     if (barrier_fully_repaired(barrier))
         log_barrier("  REPAIR LOOP COMPLETE: Barrier fully repaired!");
     else
-        log_barrier("  REPAIR LOOP COMPLETE: Max ticks reached, barrier still damaged");
+        log_barrier("  REPAIR LOOP COMPLETE: Max attempts reached (" + attempts + "), barrier still damaged");
 }
 
 bot_rebuild_barriers()

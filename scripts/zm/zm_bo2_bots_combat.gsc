@@ -67,10 +67,10 @@ bot_combat_think( damage, attacker, direction )
 			
 		if(!isDefined(level.mystery_box_teddy_locations))
 			level.mystery_box_teddy_locations = [];
-		
+			
 		// Safe door opening - prevents multiple bots from trying to open the same door
 		self bot_safely_interact_with_doors();
-		
+			
 		// Mystery box safety check - prevents using teddy bear boxes
 		self bot_safely_use_mystery_box();
 		
@@ -209,7 +209,7 @@ bot_should_use_knife()
 		return false;
 	
 	// Check cooldown to prevent spamming knife
-	if(isDefined(self.bot.last_knife_time) && (GetTime() - self.bot.last_knife_time) < 600)
+	if(isDefined(self.bot.last_knife_time) && (GetTime() - self.bot.last_knife_time) < 800)
 		return false;
 	
 	enemy = self.bot.threat.entity;
@@ -222,25 +222,21 @@ bot_should_use_knife()
 	if(current_round <= 2)
 	{
 		// Knife if enemy is close (within melee range)
-		if(dist < 80)
-			return true;
-			
-		// Also knife if we're trying to conserve ammo
-		if(dist < 120 && self bot_should_conserve_ammo())
+		if(dist < 100)
 			return true;
 	}
 	// Round 3+: Only knife when very close (emergency situations)
 	else
 	{
 		// Emergency knife when zombie is extremely close
-		if(dist < 60)
+		if(dist < 70)
 			return true;
 	}
 	
 	return false;
 }
 
-// NEW: Execute knife attack
+// NEW: Execute knife attack - FIXED to use proper bot functions
 bot_perform_knife_attack()
 {
 	if(!isDefined(self.bot.threat.entity))
@@ -248,23 +244,24 @@ bot_perform_knife_attack()
 	
 	enemy = self.bot.threat.entity;
 	
-	// Look at enemy center mass
+	// Look at enemy 
 	if(isDefined(enemy.origin))
 	{
-		self lookat(enemy.origin + (0, 0, 40)); // Aim slightly higher for better hit detection
+		self lookat(enemy.origin + (0, 0, 40));
 	}
 	
-	// Brief wait for aim adjustment
+	// Wait for aim
 	wait 0.05;
 	
-	// Press melee button
-	self MeleeButtonPressed();
+	// Use proper bot melee function
+	// The bot AI system has a melee distance check, so we use PressAltMode which triggers melee in BO2
+	self PressAltMode();
 	
 	// Update last knife time
 	self.bot.last_knife_time = GetTime();
 	
-	// Short cooldown before next action
-	wait 0.35;
+	// Short cooldown
+	wait 0.4;
 }
 
 // NEW: Maintain formation to prevent clustering

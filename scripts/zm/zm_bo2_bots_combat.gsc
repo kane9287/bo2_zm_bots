@@ -14,6 +14,8 @@ bot_combat_think( damage, attacker, direction )
 		self.bot.entity_cache_time = 0;
 	if(!isDefined(self.bot.last_follow_pos))
 		self.bot.last_follow_pos = (0,0,0);
+	if(!isDefined(self.bot.last_knife_time))
+		self.bot.last_knife_time = 0;
 	
 	for ( ;; )
 	{
@@ -197,6 +199,72 @@ bot_calculate_threat_score(zombie)
 	}
 	
 	return score;
+}
+
+// NEW: Check if bot should use knife instead of shooting
+bot_should_use_knife()
+{
+	// Check if we have an enemy
+	if(!isDefined(self.bot.threat.entity))
+		return false;
+	
+	// Check cooldown to prevent spamming knife
+	if(isDefined(self.bot.last_knife_time) && (GetTime() - self.bot.last_knife_time) < 600)
+		return false;
+	
+	enemy = self.bot.threat.entity;
+	dist = Distance(self.origin, enemy.origin);
+	
+	// Round-based knife logic
+	current_round = level.round_number;
+	
+	// Rounds 1-2: Prefer knife for efficiency and point building
+	if(current_round <= 2)
+	{
+		// Knife if enemy is close (within melee range)
+		if(dist < 80)
+			return true;
+			
+		// Also knife if we're trying to conserve ammo
+		if(dist < 120 && self bot_should_conserve_ammo())
+			return true;
+	}
+	// Round 3+: Only knife when very close (emergency situations)
+	else
+	{
+		// Emergency knife when zombie is extremely close
+		if(dist < 60)
+			return true;
+	}
+	
+	return false;
+}
+
+// NEW: Execute knife attack
+bot_perform_knife_attack()
+{
+	if(!isDefined(self.bot.threat.entity))
+		return;
+	
+	enemy = self.bot.threat.entity;
+	
+	// Look at enemy center mass
+	if(isDefined(enemy.origin))
+	{
+		self lookat(enemy.origin + (0, 0, 40)); // Aim slightly higher for better hit detection
+	}
+	
+	// Brief wait for aim adjustment
+	wait 0.05;
+	
+	// Press melee button
+	self MeleeButtonPressed();
+	
+	// Update last knife time
+	self.bot.last_knife_time = GetTime();
+	
+	// Short cooldown before next action
+	wait 0.35;
 }
 
 // NEW: Maintain formation to prevent clustering
@@ -390,6 +458,13 @@ bot_combat_main()
 {
 	weapon = self getcurrentweapon();
 	currentammo = self getweaponammoclip( weapon ) + self getweaponammostock( weapon );
+	
+	// NEW: Check if should use knife
+	if(self bot_should_use_knife())
+	{
+		self bot_perform_knife_attack();
+		return; // Skip shooting logic
+	}
 	
 	// NEW: Check if should conserve ammo
 	if(!currentammo || self bot_should_conserve_ammo())

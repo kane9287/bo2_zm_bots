@@ -8,6 +8,7 @@
 #include maps\mp\zombies\_zm_powerups;
 #include scripts\zm\zm_bo2_bots_combat;
 #include scripts\zm\zm_bo2_bots_utility; // Added include for utility functions
+#include scripts\zm\zm_bo2_bots_barrier_rebuild;
 
 
 // Bot action constants
@@ -48,6 +49,89 @@ init()
     iprintln("^3Waiting for initial blackscreen...");
     flag_wait("initial_blackscreen_passed");
     iprintln("^2Blackscreen passed, continuing bot setup...");
+
+    // === INLINE BARRIER DEBUG ===
+    wait 5;
+    println("^3=== BARRIER DEBUG START ===");
+    all_ents = GetEntArray();
+    println("^2Total entities in map: " + all_ents.size);
+
+    wait 10;
+    println("^3=== DELAYED BARRIER DEBUG ===");
+
+    zbarriers = GetEntArray("zbarrier", "classname");
+    println("^2Found " + zbarriers.size + " zbarrier entities");
+
+    exterior = GetEntArray("exterior_goal", "targetname");
+    println("^2Found " + exterior.size + " exterior_goal entities");
+
+    doors = GetEntArray("zombie_door", "targetname");
+    println("^2Found " + doors.size + " zombie_door entities");
+
+    use_triggers = GetEntArray("trigger_use", "classname");
+    println("^2Found " + use_triggers.size + " use_trigger entities");
+
+    if(isDefined(level.exterior_goals))
+    {
+        println("^2level.exterior_goals array exists with " + level.exterior_goals.size + " entries");
+
+        println("^3=== Inspecting level.exterior_goals (first 5) ===");
+        for(i = 0; i < 5 && i < level.exterior_goals.size; i++)
+        {
+            goal = level.exterior_goals[i];
+            println("^3Entry " + i + ":");
+
+            if(isDefined(goal.classname))
+                println("  classname: " + goal.classname);
+            else
+                println("  classname: undefined");
+
+            if(isDefined(goal.targetname))
+                println("  targetname: " + goal.targetname);
+            else
+                println("  targetname: undefined");
+
+            if(isDefined(goal.script_noteworthy))
+                println("  script_noteworthy: " + goal.script_noteworthy);
+            else
+                println("  script_noteworthy: undefined");
+
+            if(isDefined(goal.zbarrier))
+                println("  HAS zbarrier: YES");
+            else
+                println("  HAS zbarrier: NO");
+
+            if(isDefined(goal.trigger))
+                println("  HAS trigger: YES");
+            else
+                println("  HAS trigger: NO");
+
+            if(isDefined(goal.origin))
+                println("  origin: " + goal.origin);
+        }
+    }
+    else
+        println("^1level.exterior_goals does NOT exist");
+
+    if(zbarriers.size > 0)
+    {
+        println("^3=== First zbarrier Entity Details ===");
+        barrier = zbarriers[0];
+        println("  Classname: " + barrier.classname);
+
+        if(isDefined(barrier.targetname))
+            println("  Targetname: " + barrier.targetname);
+        else
+            println("  Targetname: undefined");
+
+        if(isDefined(barrier.script_noteworthy))
+            println("  Script noteworthy: " + barrier.script_noteworthy);
+        else
+            println("  Script noteworthy: undefined");
+    }
+
+    println("^2=== DEBUG COMPLETE ===");
+    // === END INLINE DEBUG ===
 
     if(!isdefined(level.using_bot_weapon_logic))
         level.using_bot_weapon_logic = 1;
@@ -754,12 +838,12 @@ bot_main()
 
 	self thread bot_wakeup_think();
 	self thread bot_damage_think();
-	self thread bot_give_ammo();
+	// self thread bot_give_ammo();
 	self thread bot_reset_flee_goal();
-	self thread bot_manage_ammo();
-	// If on Origins map, handle generator purchases
-	if (level.script == "zm_tomb")
-		self thread bot_origins_think();
+    self thread bot_manage_ammo();
+    // If on Origins map, handle generator purchases
+    if (level.script == "zm_tomb")
+        self thread bot_origins_think();
 	for ( ;; )
 	{
 		self waittill( "wakeup", damage, attacker, direction );
@@ -769,35 +853,26 @@ bot_main()
 		}
 		else
 		{
-			// PRIORITY 1: HIGHEST - Reviving teammates (most important)
-			if(is_true(level.using_bot_revive_logic))
-			{
-				self bot_revive_teammates();
-			}
-			
-			// PRIORITY 2: Following player (keep formation)
-			self bot_update_follow_host();
-			
-			// PRIORITY 3: Clearing obstacles (progression)
-			self bot_buy_door();  // Open paths
-			self bot_clear_debris();  // Remove blockers
-			
-			// PRIORITY 4: Combat and positioning
 			self bot_combat_think( damage, attacker, direction );
+			self bot_update_follow_host();
 			self bot_update_lookat();
 			self bot_teleport_think();
-			
-			// PRIORITY 5: Resource gathering (lower priority)
-			self bot_pickup_powerup();
-			
-			// PRIORITY 6: Weapon/equipment upgrades (lowest priority)
 			if(is_true(level.using_bot_weapon_logic))
 			{
 				self bot_buy_perks();
 				self bot_buy_wallbuy();
 				self bot_pack_gun();
-				self bot_buy_box();
+				
 			}
+			if(is_true(level.using_bot_revive_logic))
+			{
+				self bot_revive_teammates();
+			}
+			self bot_pickup_powerup();
+			self bot_buy_door();  // Added door buying functionality
+			self bot_clear_debris();  // Added debris clearing functionality
+			self bot_buy_box();  // Added box buying functionality
+			self bot_rebuild_barriers();  // Added barrier repair functionality
 
 			// Add Origins specific generator activation
 			if(level.script == "zm_tomb")
@@ -807,6 +882,8 @@ bot_main()
 		}	
 	}
 }
+
+
 bot_buy_perks()
 {
     if (!isDefined(self.bot.perk_purchase_time) || GetTime() > self.bot.perk_purchase_time)
@@ -1234,7 +1311,7 @@ bot_pack_gun()
 		// Find Pack-a-Punch machine
 		machines = GetEntArray("zombie_vending", "targetname");
 		closestPap = undefined;
-		closestDist = 800; // Maximum detection range
+		closestDist = 500; // Maximum detection range
 		
 		foreach(pack in machines)
 		{
@@ -1446,7 +1523,7 @@ bot_buy_door()
         
         // Find the closest valid door
         closestDoor = undefined;
-        closestDist = 600; 
+        closestDist = 300; // Reduced max distance for realism
 
         foreach(door in doors)
         {
@@ -1487,6 +1564,13 @@ bot_buy_door()
         // If we found a valid door and we're close enough, try to buy it
         if(isDefined(closestDoor))
         {
+            // Add human-like hesitation
+            if(randomfloat(1) < 0.15)
+            {
+                wait randomfloatrange(0.5, 1.0);
+                return true;
+            }
+
             aim_offset = (randomfloatrange(-5,5), randomfloatrange(-5,5), 0);
             self lookat(closestDoor.origin + aim_offset);
             wait randomfloatrange(0.5, 1.5);
@@ -1621,6 +1705,13 @@ bot_clear_debris()
             {
                 self AddGoal(closestDebris.origin, 50, 2, "debrisClear");
                 return false;
+            }
+
+            // Add human-like hesitation
+            if(randomfloat(1) < 0.15)
+            {
+                wait randomfloatrange(0.5, 1.0);
+                return true;
             }
 
             aim_offset = (randomfloatrange(-5,5), randomfloatrange(-5,5), 0);
@@ -1823,8 +1914,8 @@ bot_update_follow_host()
 	//goal = self GetGoal("wander");
 	//if(distance(goal, self.origin) > 100)
 	//	return;
-	//if(distance(self.origin, get_players[0].origin) > 1000)
-	self AddGoal(get_players()[0].origin, 200, 1, "wander");
+	//if(distance(self.origin, get_players[0].origin) > 3000)
+	self AddGoal(get_players()[0].origin, 100, 1, "wander");
 	//self lookat(get_players()[0].origin);
 	//else
 	//	self AddGoal()	

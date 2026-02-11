@@ -8,7 +8,6 @@
 #include maps\mp\zombies\_zm_powerups;
 #include scripts\zm\zm_bo2_bots_combat;
 #include scripts\zm\zm_bo2_bots_utility; // Added include for utility functions
-#include scripts\zm\zm_bo2_bots_barrier_rebuild;
 
 
 // Bot action constants
@@ -42,96 +41,11 @@ init()
 {
     // level.player_starting_points = 550 * 400;
     bot_set_skill();
-    
-    
 
     // Add debug
     iprintln("^3Waiting for initial blackscreen...");
     flag_wait("initial_blackscreen_passed");
     iprintln("^2Blackscreen passed, continuing bot setup...");
-
-    // === INLINE BARRIER DEBUG ===
-    wait 5;
-    println("^3=== BARRIER DEBUG START ===");
-    all_ents = GetEntArray();
-    println("^2Total entities in map: " + all_ents.size);
-
-    wait 10;
-    println("^3=== DELAYED BARRIER DEBUG ===");
-
-    zbarriers = GetEntArray("zbarrier", "classname");
-    println("^2Found " + zbarriers.size + " zbarrier entities");
-
-    exterior = GetEntArray("exterior_goal", "targetname");
-    println("^2Found " + exterior.size + " exterior_goal entities");
-
-    doors = GetEntArray("zombie_door", "targetname");
-    println("^2Found " + doors.size + " zombie_door entities");
-
-    use_triggers = GetEntArray("trigger_use", "classname");
-    println("^2Found " + use_triggers.size + " use_trigger entities");
-
-    if(isDefined(level.exterior_goals))
-    {
-        println("^2level.exterior_goals array exists with " + level.exterior_goals.size + " entries");
-
-        println("^3=== Inspecting level.exterior_goals (first 5) ===");
-        for(i = 0; i < 5 && i < level.exterior_goals.size; i++)
-        {
-            goal = level.exterior_goals[i];
-            println("^3Entry " + i + ":");
-
-            if(isDefined(goal.classname))
-                println("  classname: " + goal.classname);
-            else
-                println("  classname: undefined");
-
-            if(isDefined(goal.targetname))
-                println("  targetname: " + goal.targetname);
-            else
-                println("  targetname: undefined");
-
-            if(isDefined(goal.script_noteworthy))
-                println("  script_noteworthy: " + goal.script_noteworthy);
-            else
-                println("  script_noteworthy: undefined");
-
-            if(isDefined(goal.zbarrier))
-                println("  HAS zbarrier: YES");
-            else
-                println("  HAS zbarrier: NO");
-
-            if(isDefined(goal.trigger))
-                println("  HAS trigger: YES");
-            else
-                println("  HAS trigger: NO");
-
-            if(isDefined(goal.origin))
-                println("  origin: " + goal.origin);
-        }
-    }
-    else
-        println("^1level.exterior_goals does NOT exist");
-
-    if(zbarriers.size > 0)
-    {
-        println("^3=== First zbarrier Entity Details ===");
-        barrier = zbarriers[0];
-        println("  Classname: " + barrier.classname);
-
-        if(isDefined(barrier.targetname))
-            println("  Targetname: " + barrier.targetname);
-        else
-            println("  Targetname: undefined");
-
-        if(isDefined(barrier.script_noteworthy))
-            println("  Script noteworthy: " + barrier.script_noteworthy);
-        else
-            println("  Script noteworthy: undefined");
-    }
-
-    println("^2=== DEBUG COMPLETE ===");
-    // === END INLINE DEBUG ===
 
     if(!isdefined(level.using_bot_weapon_logic))
         level.using_bot_weapon_logic = 1;
@@ -872,7 +786,6 @@ bot_main()
 			self bot_buy_door();  // Added door buying functionality
 			self bot_clear_debris();  // Added debris clearing functionality
 			self bot_buy_box();  // Added box buying functionality
-			self bot_rebuild_barriers();  // Added barrier repair functionality
 
 			// Add Origins specific generator activation
 			if(level.script == "zm_tomb")
@@ -2361,16 +2274,10 @@ bot_buy_ammo_loop()
     self endon("death");
     level endon("game_ended");
 
-    // Debug: Confirm the loop started for this bot
-    // iprintln("^5DEBUG: " + self.name + " started bot_buy_ammo_loop");
-
     while(true)
     {
         // Check periodically
         wait randomfloatrange(3.0, 5.0);
-
-        // Debug: Check if the loop is still running
-        // iprintln("^5DEBUG: " + self.name + " checking ammo status...");
 
         // Don't try to buy ammo if downed or interacting with something critical
         if (self maps\mp\zombies\_zm_laststand::player_is_in_laststand() ||
@@ -2378,16 +2285,12 @@ bot_buy_ammo_loop()
             self hasgoal("papBuy") || self hasgoal("doorBuy") ||
             self hasgoal("debrisClear") || self hasgoal("generator"))
         {
-            // Debug: Show why the bot isn't buying ammo
-            // iprintln("^5DEBUG: " + self.name + " skipping ammo buy (downed or busy)");
             continue;
         }
 
         currentWeapon = self GetCurrentWeapon();
         if (!IsDefined(currentWeapon) || currentWeapon == "none")
         {
-            // Debug: Show if weapon is invalid
-            // iprintln("^5DEBUG: " + self.name + " skipping ammo buy (invalid weapon: " + currentWeapon + ")");
             continue;
         }
 
@@ -2396,8 +2299,6 @@ bot_buy_ammo_loop()
             IsSubStr(currentWeapon, "raygun") || IsSubStr(currentWeapon, "thunder") || IsSubStr(currentWeapon, "wave") ||
             IsSubStr(currentWeapon, "mark2") || IsSubStr(currentWeapon, "tesla") || IsSubStr(currentWeapon, "staff"))
         {
-            // Debug: Show if weapon is skipped type
-            // iprintln("^5DEBUG: " + self.name + " skipping ammo buy (weapon type not buyable: " + currentWeapon + ")");
             continue;
         }
 
@@ -2405,40 +2306,25 @@ bot_buy_ammo_loop()
         stockAmmo = self GetWeaponAmmoStock(currentWeapon);
         maxStockAmmo = WeaponMaxAmmo(currentWeapon);
 
-        // Debug: Show current ammo status
-        // iprintln("^5DEBUG: " + self.name + " Weapon: " + currentWeapon + " Stock: " + stockAmmo + "/" + maxStockAmmo);
-
         // Check if ammo is low (e.g., below 20% of max stock)
         if (IsDefined(maxStockAmmo) && maxStockAmmo > 0 && (stockAmmo < (maxStockAmmo * 0.20)))
         {
-            // Debug: Confirm ammo is low
-            // iprintln("^5DEBUG: " + self.name + " Ammo low for " + currentWeapon);
-
             // Find the wallbuy trigger for this weapon
             wallbuy = find_wallbuy_for_weapon(currentWeapon);
 
             if (IsDefined(wallbuy))
             {
-                // Debug: Confirm wallbuy found
-                // iprintln("^5DEBUG: " + self.name + " Found wallbuy for " + currentWeapon + " at " + wallbuy.origin);
-
                 ammo_cost = int(wallbuy.trigger_stub.cost / 2);
 
                 // Check if bot can afford it
                 if (self.score >= ammo_cost)
                 {
-                    // Debug: Confirm bot can afford ammo
-                    // iprintln("^5DEBUG: " + self.name + " Can afford ammo (Cost: " + ammo_cost + ", Score: " + self.score + ")");
-
                     dist_sq = DistanceSquared(self.origin, wallbuy.origin);
                     interaction_dist_sq = 10000; // Within 100 units
 
                     // If close enough, buy ammo
                     if (dist_sq < interaction_dist_sq)
                     {
-                        // Debug: Confirm bot is close enough to buy
-                        // iprintln("^5DEBUG: " + self.name + " Attempting to buy ammo for " + currentWeapon);
-                        // ... (rest of the buying logic) ...
                         self maps\mp\zombies\_zm_score::minus_to_player_score(ammo_cost);
                         self GiveMaxAmmo(currentWeapon);
                         self PlaySound("zmb_cha_ching");
@@ -2447,44 +2333,19 @@ bot_buy_ammo_loop()
                     // If not close enough, move towards it
                     else if (dist_sq < 400000) // Within 632 units
                     {
-                        // Debug: Confirm bot is moving towards wallbuy
-                        // iprintln("^5DEBUG: " + self.name + " Moving towards wallbuy for " + currentWeapon);
-                        // ... (rest of the pathing logic) ...
                         if (!self hasgoal("ammoBuy") || Distance(self GetGoal("ammoBuy"), wallbuy.origin) > 100)
                         {
                             if (FindPath(self.origin, wallbuy.origin, undefined, 0, 1))
                             {
                                 self AddGoal(wallbuy.origin, 75, 1, "ammoBuy");
                             }
-                            else
-                            {
-                                // Debug: Show if path not found
-                                // iprintln("^1DEBUG: " + self.name + " Path not found to wallbuy at " + wallbuy.origin);
-                            }
                         }
                     }
-                    else
-                    {
-                        // Debug: Show if wallbuy is too far
-                        // iprintln("^5DEBUG: " + self.name + " Wallbuy too far for " + currentWeapon + " (DistSq: " + dist_sq + ")");
-                    }
                 }
-                else
-                {
-                    // Debug: Show if bot cannot afford ammo
-                    // iprintln("^5DEBUG: " + self.name + " Cannot afford ammo for " + currentWeapon + " (Cost: " + ammo_cost + ", Score: " + self.score + ")");
-                }
-            }
-            else
-            {
-                // Debug: Show if wallbuy not found
-                // iprintln("^5DEBUG: " + self.name + " No wallbuy found for " + currentWeapon);
             }
         }
         else
         {
-             // Debug: Show if ammo is not low
-            //  iprintln("^5DEBUG: " + self.name + " Ammo OK for " + currentWeapon);
              if (self hasgoal("ammoBuy"))
              {
                  self cancelgoal("ammoBuy");
@@ -2520,12 +2381,8 @@ find_wallbuy_for_weapon(weapon_name)
             dist_sq = DistanceSquared(self.origin, wallbuy.origin);
             if (dist_sq < closest_dist_sq)
             {
-                // Basic visibility check (optional but can help)
-                // if (SightTracePassed(self.origin + (0,0,50), wallbuy.origin + (0,0,10), false, self))
-                // {
-                    closest_dist_sq = dist_sq;
-                    closest_wallbuy = wallbuy;
-                // }
+                closest_dist_sq = dist_sq;
+                closest_wallbuy = wallbuy;
             }
         }
     }

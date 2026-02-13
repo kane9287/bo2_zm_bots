@@ -90,29 +90,30 @@ init()
 
 bot_set_skill()
 {
-	setdvar( "bot_MinDeathTime", "250" );
-	setdvar( "bot_MaxDeathTime", "500" );
-	setdvar( "bot_MinFireTime", "100" );
-	setdvar( "bot_MaxFireTime", "250" );
+	// MP Veteran-level settings for maximum combat effectiveness
+	setdvar( "bot_MinDeathTime", "100" );      // Reduced from 250
+	setdvar( "bot_MaxDeathTime", "200" );      // Reduced from 500
+	setdvar( "bot_MinFireTime", "50" );        // Reduced from 100
+	setdvar( "bot_MaxFireTime", "150" );       // Reduced from 250
 	setdvar( "bot_PitchUp", "-5" );
 	setdvar( "bot_PitchDown", "10" );
-	setdvar( "bot_Fov", "160" );
-	setdvar( "bot_MinAdsTime", "3000" );
-	setdvar( "bot_MaxAdsTime", "5000" );
+	setdvar( "bot_Fov", "180" );               // Increased from 160
+	setdvar( "bot_MinAdsTime", "1500" );       // Reduced from 3000
+	setdvar( "bot_MaxAdsTime", "2500" );       // Reduced from 5000
 	setdvar( "bot_MinCrouchTime", "100" );
 	setdvar( "bot_MaxCrouchTime", "400" );
-	setdvar( "bot_TargetLeadBias", "2" );
-	setdvar( "bot_MinReactionTime", "40" );
-	setdvar( "bot_MaxReactionTime", "70" );
+	setdvar( "bot_TargetLeadBias", "1" );      // Reduced from 2
+	setdvar( "bot_MinReactionTime", "10" );    // Reduced from 40
+	setdvar( "bot_MaxReactionTime", "30" );    // Reduced from 70
 	setdvar( "bot_StrafeChance", "1" );
-	setdvar( "bot_MinStrafeTime", "3000" );
-	setdvar( "bot_MaxStrafeTime", "6000" );
+	setdvar( "bot_MinStrafeTime", "2000" );    // Reduced from 3000
+	setdvar( "bot_MaxStrafeTime", "4000" );    // Reduced from 6000
 	setdvar( "scr_help_dist", "512" );
 	setdvar( "bot_AllowGrenades", "1" );
 	setdvar( "bot_MinGrenadeTime", "1500" );
 	setdvar( "bot_MaxGrenadeTime", "4000" );
 	setdvar( "bot_MeleeDist", "70" );
-	setdvar( "bot_YawSpeed", "4" );
+	setdvar( "bot_YawSpeed", "6" );            // Increased from 4
 	setdvar( "bot_SprintDistance", "256" );
 }
 
@@ -755,6 +756,7 @@ bot_main()
 	// self thread bot_give_ammo();
 	self thread bot_reset_flee_goal();
     self thread bot_manage_ammo();
+    self thread bot_check_ammo_and_buy(); // NEW: Proactive weapon buying
     // If on Origins map, handle generator purchases
     if (level.script == "zm_tomb")
         self thread bot_origins_think();
@@ -794,6 +796,97 @@ bot_main()
 			}
 		}	
 	}
+}
+
+// NEW: Proactive weapon buying when out of ammo
+bot_check_ammo_and_buy()
+{
+	self endon("death");
+	self endon("disconnect");
+	level endon("game_ended");
+	
+	while(1)
+	{
+		wait 2; // Check every 2 seconds
+		
+		// Skip if in last stand
+		if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+			continue;
+		
+		weapons = self GetWeaponsListPrimaries();
+		hasAmmo = false;
+		
+		foreach(weapon in weapons)
+		{
+			if(self GetWeaponAmmoStock(weapon) > 0 || self GetWeaponAmmoClip(weapon) > 0)
+			{
+				hasAmmo = true;
+				break;
+			}
+		}
+		
+		// If completely out of ammo, prioritize weapon purchase
+		if(!hasAmmo && self.score >= 750)
+		{
+			// Try wallbuy first (cheaper and usually closer)
+			wallbuy_attempted = self bot_try_nearby_wallbuy();
+			
+			// If no wallbuy worked, try mystery box (but don't force it)
+			if(!wallbuy_attempted)
+			{
+				self bot_buy_box();
+			}
+			
+			wait 3; // Cooldown after purchase attempt
+		}
+	}
+}
+
+// NEW: Try to buy from nearby wallbuys
+bot_try_nearby_wallbuy()
+{
+	if(!isDefined(level._spawned_wallbuys))
+		return false;
+		
+	closest_wallbuy = undefined;
+	closest_dist = 400;
+	
+	foreach(wallbuy in level._spawned_wallbuys)
+	{
+		if(!isDefined(wallbuy) || !isDefined(wallbuy.trigger_stub))
+			continue;
+			
+		dist = Distance(self.origin, wallbuy.origin);
+		if(dist < closest_dist && self.score >= wallbuy.trigger_stub.cost)
+		{
+			if(FindPath(self.origin, wallbuy.origin, undefined, 0, 1))
+			{
+				closest_dist = dist;
+				closest_wallbuy = wallbuy;
+			}
+		}
+	}
+	
+	if(isDefined(closest_wallbuy))
+	{
+		// Move to wallbuy
+		if(closest_dist > 100)
+		{
+			self AddGoal(closest_wallbuy.origin, 75, 3, "weaponBuy");
+			wait 2;
+		}
+		
+		// Buy weapon
+		self maps\mp\zombies\_zm_score::minus_to_player_score(closest_wallbuy.trigger_stub.cost);
+		self TakeAllWeapons();
+		self GiveWeapon(closest_wallbuy.trigger_stub.zombie_weapon_upgrade);
+		self SetSpawnWeapon(closest_wallbuy.trigger_stub.zombie_weapon_upgrade);
+		self SwitchToWeapon(closest_wallbuy.trigger_stub.zombie_weapon_upgrade);
+		self cancelgoal("weaponBuy");
+		return true;
+	}
+	
+	return false;
 }
 
 

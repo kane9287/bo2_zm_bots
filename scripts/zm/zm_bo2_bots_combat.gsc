@@ -82,7 +82,7 @@ bot_combat_think( damage, attacker, direction )
 		// Maintain formation with other bots
 		self bot_maintain_formation();
 		
-		wait 0.05;
+		wait 0.02; // Reduced from 0.05 for faster reaction times
 	}
 }
 
@@ -215,7 +215,15 @@ bot_should_use_knife()
 	enemy = self.bot.threat.entity;
 	dist = Distance(self.origin, enemy.origin);
 	
-	// Round-based knife logic
+	// Check if we're out of ammo
+	weapon = self GetCurrentWeapon();
+	currentammo = self getweaponammoclip(weapon) + self getweaponammostock(weapon);
+	
+	// If out of ammo and close enough, use knife
+	if(!currentammo && dist < 80)
+		return true;
+	
+	// Round-based knife logic for efficiency
 	current_round = level.round_number;
 	
 	// Rounds 1-2: Prefer knife for efficiency and point building
@@ -236,7 +244,7 @@ bot_should_use_knife()
 	return false;
 }
 
-// NEW: Execute knife attack - FIXED to use proper bot functions
+// NEW: Execute knife attack
 bot_perform_knife_attack()
 {
 	if(!isDefined(self.bot.threat.entity))
@@ -253,9 +261,8 @@ bot_perform_knife_attack()
 	// Wait for aim
 	wait 0.05;
 	
-	// Use proper bot melee function
-	// The bot AI system has a melee distance check, so we use PressAltMode which triggers melee in BO2
-	self PressAltMode();
+	// Use melee button press
+	self MeleeButtonPressed();
 	
 	// Update last knife time
 	self.bot.last_knife_time = GetTime();
@@ -463,8 +470,8 @@ bot_combat_main()
 		return; // Skip shooting logic
 	}
 	
-	// NEW: Check if should conserve ammo
-	if(!currentammo || self bot_should_conserve_ammo())
+	// NEW: If out of ammo but not close enough for knife, return
+	if(!currentammo)
 	{
 		return;
 	}
@@ -510,49 +517,6 @@ bot_combat_main()
 		self allowattack( self.stingerlockfinalized );
 		return;
 	}
-}
-
-// NEW: Ammo conservation logic
-bot_should_conserve_ammo()
-{
-	weapon = self GetCurrentWeapon();
-	stock = self GetWeaponAmmoStock(weapon);
-	max_stock = WeaponMaxAmmo(weapon);
-	
-	if(!isDefined(max_stock) || max_stock == 0)
-		return false;
-		
-	ammo_percentage = stock / max_stock;
-	
-	// Conserve if below 30% and far from wallbuy
-	if(ammo_percentage < 0.3)
-	{
-		// Check if there's a wallbuy nearby
-		if(!isDefined(level._spawned_wallbuys))
-			return true;
-			
-		closest_wallbuy_dist = 999999;
-		foreach(wallbuy in level._spawned_wallbuys)
-		{
-			if(!isDefined(wallbuy) || !isDefined(wallbuy.trigger_stub))
-				continue;
-				
-			// Check if wallbuy matches our weapon
-			if(wallbuy.trigger_stub.zombie_weapon_upgrade == weapon ||
-			   maps\mp\zombies\_zm_weapons::get_upgrade_weapon(wallbuy.trigger_stub.zombie_weapon_upgrade) == weapon)
-			{
-				dist = Distance(self.origin, wallbuy.origin);
-				if(dist < closest_wallbuy_dist)
-					closest_wallbuy_dist = dist;
-			}
-		}
-		
-		// If no wallbuy within 1000 units, conserve ammo
-		if(closest_wallbuy_dist > 1000)
-			return true;
-	}
-	
-	return false;
 }
 
 bot_combat_dead( damage )

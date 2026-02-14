@@ -1,13 +1,13 @@
-#include maps\mp\zombies\_zm_utility;
-#include common_scripts\utility;
-#include maps\mp\_utility;
-#include maps\mp\zombies\_zm_score;
-#include maps\mp\zombies\_zm_laststand;
-#include maps\mp\zombies\_zm_weapons;
-#include maps\mp\zombies\_zm_blockers;
-#include maps\mp\zombies\_zm_powerups;
-#include scripts\zm\zm_bo2_bots_combat;
-#include scripts\zm\zm_bo2_bots_utility; // Added include for utility functions
+#include maps\\mp\\zombies\\_zm_utility;
+#include common_scripts\\utility;
+#include maps\\mp\\_utility;
+#include maps\\mp\\zombies\\_zm_score;
+#include maps\\mp\\zombies\\_zm_laststand;
+#include maps\\mp\\zombies\\_zm_weapons;
+#include maps\\mp\\zombies\\_zm_blockers;
+#include maps\\mp\\zombies\\_zm_powerups;
+#include scripts\\zm\\zm_bo2_bots_combat;
+#include scripts\\zm\\zm_bo2_bots_utility; // Added include for utility functions
 
 
 // Bot action constants
@@ -20,6 +20,7 @@ bot_spawn()
     self bot_spawn_init();
     self thread bot_main();
     self thread bot_check_player_blocking();
+    self thread bot_give_starting_perks(); // Give starting perks
 }
 
 array_combine(array1, array2)
@@ -82,7 +83,7 @@ init()
     // Initialize map specific logic
     if(level.script == "zm_tomb")
     {
-        level thread scripts\zm\zm_bo2_bots_origins::init();
+        level thread scripts\\zm\\zm_bo2_bots_origins::init();
     }
 
     iprintln("^2Bot initialization complete");
@@ -161,6 +162,31 @@ bot_get_closest_enemy( origin )
 	return undefined;
 }
 
+// NEW: Give bots Quick Revive and Juggernog at spawn
+bot_give_starting_perks()
+{
+    self endon("disconnect");
+    self endon("death");
+    
+    // Wait for bot to be fully initialized and spawned
+    wait 2;
+    
+    // Give Quick Revive (specialty_quickrevive)
+    if(!self HasPerk("specialty_quickrevive"))
+    {
+        self thread maps\\mp\\zombies\\_zm_perks::give_perk("specialty_quickrevive");
+        iprintln("^2Bot given Quick Revive");
+        wait 0.5;
+    }
+    
+    // Give Juggernog (specialty_armorvest)
+    if(!self HasPerk("specialty_armorvest"))
+    {
+        self thread maps\\mp\\zombies\\_zm_perks::give_perk("specialty_armorvest");
+        iprintln("^2Bot given Juggernog");
+    }
+}
+
 bot_buy_box()
 {
     // Only try to access the box on a timed interval (REDUCED FROM 3000 to 1500)
@@ -169,7 +195,7 @@ bot_buy_box()
         self.bot.box_purchase_time = GetTime() + 1500; // Try every 1.5 seconds instead of 3
 
         // Don't try if we're in last stand
-        if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+        if(self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
             return;
 
         // Don't try if we can't afford it (use 950 cost)
@@ -245,7 +271,7 @@ bot_buy_box()
                     // Re-validate box state
                     if(!isDefined(activeBox) || !isDefined(activeBox._box_open) || !activeBox._box_open ||
                        !isDefined(activeBox.weapon_out) || !activeBox.weapon_out ||
-                       self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+                       self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
                     {
                         return; // State changed, abort grab
                     }
@@ -392,7 +418,7 @@ bot_buy_box()
                    flag("moving_chest_now") ||
                    (isDefined(current_box.is_locked) && current_box.is_locked) ||
                    (isDefined(current_box.chest_user) && current_box.chest_user != self) ||
-                   self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+                   self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
                 {
                     return; // Conditions changed, abort
                 }
@@ -407,7 +433,7 @@ bot_buy_box()
                 self.bot.box_payment_time = GetTime();
 
                 // Deduct points
-                self maps\mp\zombies\_zm_score::minus_to_player_score(950);
+                self maps\\mp\\zombies\\_zm_score::minus_to_player_score(950);
                 self PlaySound("zmb_cha_ching");
 
                 // Set cooldown times
@@ -559,7 +585,7 @@ bot_monitor_box_animation(box)
        !box._box_open ||
        !isDefined(box.weapon_out) ||
        !box.weapon_out ||
-       self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+       self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
     {
         self.bot.current_box = undefined;
         // Clear global usage flag when done
@@ -686,7 +712,7 @@ spawn_bot()
     bot waittill("spawned_player");
     iprintln("^2Bot spawned, configuring...");
     
-    bot thread maps\mp\zombies\_zm::spawnspectator();
+    bot thread maps\\mp\\zombies\\_zm::spawnspectator();
     if(isDefined(bot))
     {
         bot.pers["isBot"] = 1;
@@ -796,7 +822,7 @@ bot_main()
 			// Add Origins specific generator activation
 			if(level.script == "zm_tomb")
 			{
-				self thread scripts\zm\zm_bo2_bots_origins::bot_activate_generator();
+				self thread scripts\\zm\\zm_bo2_bots_origins::bot_activate_generator();
 			}
 		}	
 	}
@@ -814,7 +840,7 @@ bot_check_ammo_and_buy()
 		wait 2; // Check every 2 seconds
 		
 		// Skip if in last stand
-		if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+		if(self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
 			continue;
 		
 		weapons = self GetWeaponsListPrimaries();
@@ -881,7 +907,7 @@ bot_try_nearby_wallbuy()
 		}
 		
 		// Buy weapon
-		self maps\mp\zombies\_zm_score::minus_to_player_score(closest_wallbuy.trigger_stub.cost);
+		self maps\\mp\\zombies\\_zm_score::minus_to_player_score(closest_wallbuy.trigger_stub.cost);
 		self TakeAllWeapons();
 		self GiveWeapon(closest_wallbuy.trigger_stub.zombie_weapon_upgrade);
 		self SetSpawnWeapon(closest_wallbuy.trigger_stub.zombie_weapon_upgrade);
@@ -901,7 +927,7 @@ bot_buy_perks()
         // Only attempt to buy perks every 4 seconds
         self.bot.perk_purchase_time = GetTime() + 4000;
         
-        if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+        if(self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
             return;
             
         perks = array("specialty_armorvest", "specialty_quickrevive", "specialty_fastreload", "specialty_rof", "specialty_longersprint", "specialty_deadshot","specialty_additionalprimaryweapon");
@@ -932,8 +958,8 @@ bot_buy_perks()
                     // Only try to buy if we don't have it and can afford it
                     if(!self HasPerk(perks[i]) && self.score >= costs[i])
                     {
-                        self maps\mp\zombies\_zm_score::minus_to_player_score(costs[i]);
-                        self thread maps\mp\zombies\_zm_perks::give_perk(perks[i]);
+                        self maps\\mp\\zombies\\_zm_score::minus_to_player_score(costs[i]);
+                        self thread maps\\mp\\zombies\\_zm_perks::give_perk(perks[i]);
                         return;
                     }
                 }
@@ -971,7 +997,7 @@ bot_best_gun(buyingweapon, currentweapon)
     }
 
     // Consider weapon cost as fallback
-    if(maps\mp\zombies\_zm_weapons::get_weapon_cost(buyingweapon) > maps\mp\zombies\_zm_weapons::get_weapon_cost(currentweapon))
+    if(maps\\mp\\zombies\\_zm_weapons::get_weapon_cost(buyingweapon) > maps\\mp\\zombies\\_zm_weapons::get_weapon_cost(currentweapon))
         return true;
         
     return false;
@@ -991,7 +1017,7 @@ bot_teleport_think()
 	host_player = undefined;
 	foreach(player in players)
 	{
-		if(player != self && !player maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+		if(player != self && !player maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
 		{
 			host_player = player;
 			break;
@@ -1121,7 +1147,7 @@ bot_reset_flee_goal()
 
 bot_revive_teammates()
 {
-	if(!maps\mp\zombies\_zm_laststand::player_any_player_in_laststand() || self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+	if(!maps\\mp\\zombies\\_zm_laststand::player_any_player_in_laststand() || self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
 	{
 		self cancelgoal("revive");
 		return;
@@ -1141,9 +1167,9 @@ bot_revive_teammates()
 			teammate.revivetrigger disable_trigger();
 			wait 0.75;
 			teammate.revivetrigger enable_trigger();
-			if(!self maps\mp\zombies\_zm_laststand::player_is_in_laststand() && teammate maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+			if(!self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand() && teammate maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
 			{
-				teammate maps\mp\zombies\_zm_laststand::auto_revive( self );
+				teammate maps\\mp\\zombies\\_zm_laststand::auto_revive( self );
 			}
 		}
 	}
@@ -1151,12 +1177,12 @@ bot_revive_teammates()
 
 bot_pickup_powerup()
 {
-	if(maps\mp\zombies\_zm_powerups::get_powerups(self.origin, 1000).size == 0)
+	if(maps\\mp\\zombies\\_zm_powerups::get_powerups(self.origin, 1000).size == 0)
 	{
 		self CancelGoal("powerup");
 		return;
 	}
-	powerups = maps\mp\zombies\_zm_powerups::get_powerups(self.origin, 1000);
+	powerups = maps\\mp\\zombies\\_zm_powerups::get_powerups(self.origin, 1000);
 	foreach(powerup in powerups)
 	{
 		if(FindPath(self.origin, powerup.origin, undefined, 0, 1))
@@ -1182,12 +1208,12 @@ bot_check_player_blocking()
         wait 0.15; // Slightly reduced check frequency for better performance
         
         // Skip checks if bot is in last stand
-        if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+        if(self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
             continue;
             
         foreach(player in get_players())
         {
-            if(player == self || !isPlayer(player) || player maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+            if(player == self || !isPlayer(player) || player maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
                 continue;
                 
             // Check if bot is too close to player and potentially blocking
@@ -1283,12 +1309,12 @@ bot_check_player_blocking()
 
 get_closest_downed_teammate()
 {
-	if(!maps\mp\zombies\_zm_laststand::player_any_player_in_laststand())
+	if(!maps\\mp\\zombies\\_zm_laststand::player_any_player_in_laststand())
 		return;
 	downed_players = [];
 	foreach(player in get_players())
 	{
-		if(player maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+		if(player maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
 		downed_players[downed_players.size] = player;
 	}
 	downed_players = arraysort(downed_players, self.origin);
@@ -1389,11 +1415,11 @@ bot_pack_gun()
 		level.last_bot_pap_time = GetTime();
 		
 		// Deduct points
-		self maps\mp\zombies\_zm_score::minus_to_player_score(5000);
+		self maps\\mp\\zombies\\_zm_score::minus_to_player_score(5000);
 		
 		// Get current weapon before upgrading
 		weapon = self GetCurrentWeapon();
-		upgrade_name = maps\mp\zombies\_zm_weapons::get_upgrade_weapon(weapon);
+		upgrade_name = maps\\mp\\zombies\\_zm_weapons::get_upgrade_weapon(weapon);
 		
 		// Play animation of putting weapon in
 		self PlaySound("zmb_cha_ching");
@@ -1429,7 +1455,7 @@ bot_monitor_pap_upgrade(pap_machine, old_weapon, upgrade_name)
 	wait randomfloatrange(5, 6);
 	
 	// Make sure we're still valid and in appropriate state
-	if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+	if(self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
 	{
 		// Clear usage flags
 		if(isDefined(level.pap_in_use_by_bot) && level.pap_in_use_by_bot == self)
@@ -1486,7 +1512,7 @@ bot_buy_wallbuy()
 	level endon("end_game");
 	
 	// REMOVED the early return that prevented buying if they had good guns
-	if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+	if(self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
 	{
 		self CancelGoal("weaponBuy");
 		return;
@@ -1523,7 +1549,7 @@ bot_buy_wallbuy()
 	while(!self AtGoal("weaponBuy") && Distance(self.origin, weaponToBuy.origin) > 100)
 	{
 		wait 1;
-		if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+		if(self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand())
 		{
 			self cancelgoal("weaponBuy");
 			return;
@@ -1531,7 +1557,7 @@ bot_buy_wallbuy()
 	}
 	
 	self cancelgoal("weaponBuy");
-	self maps\mp\zombies\_zm_score::minus_to_player_score( weaponToBuy.trigger_stub.cost );
+	self maps\\mp\\zombies\\_zm_score::minus_to_player_score( weaponToBuy.trigger_stub.cost );
 	self TakeAllWeapons();
 	self GiveWeapon(weaponToBuy.trigger_stub.zombie_weapon_upgrade);
 	self SetSpawnWeapon(weaponToBuy.trigger_stub.zombie_weapon_upgrade);
@@ -1603,7 +1629,7 @@ bot_buy_door()
             wait randomfloatrange(0.5, 1.5);
 
             // Deduct points first
-            self maps\mp\zombies\_zm_score::minus_to_player_score(closestDoor.zombie_cost);
+            self maps\\mp\\zombies\\_zm_score::minus_to_player_score(closestDoor.zombie_cost);
             
             // Try to call door_buy first, if that function exists on the door
             if(isDefined(closestDoor.door_buy))
@@ -1613,7 +1639,7 @@ bot_buy_door()
             // Otherwise fallback to direct door_opened call
             else
             {
-                closestDoor thread maps\mp\zombies\_zm_blockers::door_opened(closestDoor.zombie_cost);
+                closestDoor thread maps\\mp\\zombies\\_zm_blockers::door_opened(closestDoor.zombie_cost);
             }
             
             // Mark door as opened
@@ -1746,7 +1772,7 @@ bot_clear_debris()
             wait randomfloatrange(0.5, 1.5);
             
             // Deduct points and clear debris
-            self maps\mp\zombies\_zm_score::minus_to_player_score(closestDebris.zombie_cost);
+            self maps\\mp\\zombies\\_zm_score::minus_to_player_score(closestDebris.zombie_cost);
             junk = getentarray(closestDebris.target, "targetname");
             // Mark the debris as cleared
             closestDebris._door_open = 1;
@@ -1793,7 +1819,7 @@ bot_clear_debris()
                     struct = getstruct(chunk.script_linkto, "script_linkname");
                     if(isDefined(struct))
                     {
-                        chunk thread maps\mp\zombies\_zm_blockers::debris_move(struct);
+                        chunk thread maps\\mp\\zombies\\_zm_blockers::debris_move(struct);
                     }
                     else
                         chunk delete();
@@ -1813,8 +1839,8 @@ bot_clear_debris()
                 self cancelgoal("debrisClear");
             
             // Update stats
-            self maps\mp\zombies\_zm_stats::increment_client_stat("doors_purchased");
-            self maps\mp\zombies\_zm_stats::increment_player_stat("doors_purchased");
+            self maps\\mp\\zombies\\_zm_stats::increment_client_stat("doors_purchased");
+            self maps\\mp\\zombies\\_zm_stats::increment_player_stat("doors_purchased");
             
             return true;
         }
@@ -1827,7 +1853,7 @@ bot_clear_debris()
 
 bot_should_pack()
 {
-	if(maps\mp\zombies\_zm_weapons::can_upgrade_weapon(self GetCurrentWeapon()))
+	if(maps\\mp\\zombies\\_zm_weapons::can_upgrade_weapon(self GetCurrentWeapon()))
 		return 1;
 	return 0;
 }
@@ -2398,7 +2424,7 @@ bot_buy_ammo_loop()
         wait randomfloatrange(3.0, 5.0);
 
         // Don't try to buy ammo if downed or interacting with something critical
-        if (self maps\mp\zombies\_zm_laststand::player_is_in_laststand() ||
+        if (self maps\\mp\\zombies\\_zm_laststand::player_is_in_laststand() ||
             self hasgoal("revive") || self hasgoal("boxBuy") ||
             self hasgoal("papBuy") || self hasgoal("doorBuy") ||
             self hasgoal("debrisClear") || self hasgoal("generator"))
@@ -2443,7 +2469,7 @@ bot_buy_ammo_loop()
                     // If close enough, buy ammo
                     if (dist_sq < interaction_dist_sq)
                     {
-                        self maps\mp\zombies\_zm_score::minus_to_player_score(ammo_cost);
+                        self maps\\mp\\zombies\\_zm_score::minus_to_player_score(ammo_cost);
                         self GiveMaxAmmo(currentWeapon);
                         self PlaySound("zmb_cha_ching");
                         wait 2.0;
@@ -2490,7 +2516,7 @@ find_wallbuy_for_weapon(weapon_name)
         base_match = (wallbuy.trigger_stub.zombie_weapon_upgrade == weapon_name);
 
         // Check if the wallbuy matches the upgraded version of the weapon
-        upgraded_name = maps\mp\zombies\_zm_weapons::get_upgrade_weapon(wallbuy.trigger_stub.zombie_weapon_upgrade);
+        upgraded_name = maps\\mp\\zombies\\_zm_weapons::get_upgrade_weapon(wallbuy.trigger_stub.zombie_weapon_upgrade);
         upgrade_match = (IsDefined(upgraded_name) && upgraded_name == weapon_name);
 
         if (base_match || upgrade_match)

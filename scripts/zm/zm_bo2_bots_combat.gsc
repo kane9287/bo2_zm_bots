@@ -383,6 +383,85 @@ bot_get_target_contention(zombie)
 	return bot_count;
 }
 
+// Bot revive teammates logic
+bot_revive_teammates()
+{
+	if(!isDefined(self.bot))
+		return;
+		
+	// Check every 0.5 seconds
+	if(isDefined(self.bot.revive_check_time) && GetTime() < self.bot.revive_check_time)
+		return;
+		
+	self.bot.revive_check_time = GetTime() + 500;
+	
+	// Don't revive if bot is in laststand
+	if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+	{
+		if(self hasgoal("revive"))
+			self cancelgoal("revive");
+		return;
+	}
+	
+	// Find downed teammates
+	players = get_players();
+	downed_player = undefined;
+	closest_dist_sq = 250000; // 500^2
+	
+	foreach(player in players)
+	{
+		if(player == self)
+			continue;
+			
+		if(!isDefined(player))
+			continue;
+			
+		// Check if player is in laststand
+		if(player maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+		{
+			dist_sq = DistanceSquared(self.origin, player.origin);
+			
+			if(dist_sq < closest_dist_sq)
+			{
+				// Check if path exists
+				if(FindPath(self.origin, player.origin, undefined, 0, 1))
+				{
+					closest_dist_sq = dist_sq;
+					downed_player = player;
+				}
+			}
+		}
+	}
+	
+	// Navigate to downed player
+	if(isDefined(downed_player))
+	{
+		// Close enough to revive
+		if(closest_dist_sq < 10000) // 100^2
+		{
+			if(self hasgoal("revive"))
+				self cancelgoal("revive");
+				
+			// Look at downed player and hold use button
+			self lookat(downed_player.origin);
+			
+			// Bot will automatically revive when close and looking at downed player
+			// The game handles the actual revive interaction
+		}
+		// Navigate to downed player
+		else if(!self hasgoal("revive") || DistanceSquared(self GetGoal("revive"), downed_player.origin) > 2500)
+		{
+			// High priority goal to revive teammates
+			self AddGoal(downed_player.origin, 48, 5, "revive");
+		}
+	}
+	else if(self hasgoal("revive"))
+	{
+		// No downed players nearby, cancel goal
+		self cancelgoal("revive");
+	}
+}
+
 // Tactical positioning - finds chokepoints
 bot_use_tactical_positioning()
 {

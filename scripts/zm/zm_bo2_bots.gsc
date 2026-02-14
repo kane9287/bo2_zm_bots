@@ -163,10 +163,10 @@ bot_get_closest_enemy( origin )
 
 bot_buy_box()
 {
-    // Only try to access the box on a timed interval
+    // Only try to access the box on a timed interval (REDUCED FROM 3000 to 1500)
     if (!isDefined(self.bot.box_purchase_time) || GetTime() > self.bot.box_purchase_time)
     {
-        self.bot.box_purchase_time = GetTime() + 3000; // Try every 3 seconds
+        self.bot.box_purchase_time = GetTime() + 1500; // Try every 1.5 seconds instead of 3
 
         // Don't try if we're in last stand
         if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
@@ -183,12 +183,12 @@ bot_buy_box()
             return;
         }
 
-        // Check global cooldown to prevent box from moving too quickly
-        if(isDefined(level.last_bot_box_interaction_time) && (GetTime() - level.last_bot_box_interaction_time < 30000)) // 30 sec global cooldown
+        // REDUCED global cooldown from 30 sec to 10 sec
+        if(isDefined(level.last_bot_box_interaction_time) && (GetTime() - level.last_bot_box_interaction_time < 10000))
             return;
 
-        // Personal cooldown to prevent the same bot from constantly using the box
-        if(isDefined(self.bot.last_box_interaction_time) && (GetTime() - self.bot.last_box_interaction_time < 15000)) // 15 sec personal cooldown
+        // REDUCED personal cooldown from 15 sec to 5 sec
+        if(isDefined(self.bot.last_box_interaction_time) && (GetTime() - self.bot.last_box_interaction_time < 5000))
             return;
 
         // --- Start: Logic to grab from an already open box (Kept from original) ---
@@ -304,8 +304,8 @@ bot_buy_box()
 
                     return; // Finished grab attempt
                 }
-                // If not close enough, move towards it
-                else if (closestOpenBoxDist < 500) // Detection range
+                // If not close enough, move towards it (INCREASED range from 500 to 800)
+                else if (closestOpenBoxDist < 800)
                 {
                     if(!self hasgoal("boxGrab")) // Only set goal if not already moving
                     {
@@ -358,7 +358,7 @@ bot_buy_box()
 
         dist = Distance(self.origin, current_box.origin);
         interaction_dist = 100; // Distance to interact
-        detection_dist = 500; // Distance to start moving towards
+        detection_dist = 800; // INCREASED from 500 to 800
 
         // Only try to use box if we have enough points and it's reasonably close
         if(self.score >= 950 && dist < detection_dist)
@@ -778,6 +778,7 @@ bot_main()
 				self bot_buy_perks();
 				self bot_buy_wallbuy();
 				self bot_pack_gun();
+				self bot_buy_box();  // Call box buying in main loop
 				
 			}
 			if(is_true(level.using_bot_revive_logic))
@@ -787,7 +788,6 @@ bot_main()
 			self bot_pickup_powerup();
 			self bot_buy_door();  // Added door buying functionality
 			self bot_clear_debris();  // Added debris clearing functionality
-			self bot_buy_box();  // Added box buying functionality
 
 			// Add Origins specific generator activation
 			if(level.script == "zm_tomb")
@@ -940,25 +940,30 @@ bot_buy_perks()
 
 bot_best_gun(buyingweapon, currentweapon)
 {
+	// SIMPLIFIED - just check if it's a better weapon than pistol
+	if(IsSubStr(currentweapon, "m1911"))
+		return true; // Always upgrade from starting pistol
+		
     // Priority weapons based on round number
     if(level.round_number >= 15)
     {
-        priority_weapons = array("galil_zm", "an94_zm", "pdw57_zm", "mp5k_zm");
+        priority_weapons = array("galil_zm", "an94_zm", "pdw57_zm", "mp5k_zm", "mtar_zm");
         foreach(weapon in priority_weapons)
         {
-            if(buyingweapon == weapon)
+            if(IsSubStr(buyingweapon, weapon))
                 return true;
         }
     }
     else if(level.round_number >= 8)
     {
-        if(buyingweapon == "pdw57_zm" || buyingweapon == "mp5k_zm")
+        if(IsSubStr(buyingweapon, "pdw57") || IsSubStr(buyingweapon, "mp5k") || IsSubStr(buyingweapon, "mtar"))
             return true;
     }
     else
     {
-        if(buyingweapon == "mp5k_zm")
-            return true;
+        // Early rounds - take any non-pistol
+        if(!IsSubStr(buyingweapon, "1911") && !IsSubStr(buyingweapon, "pistol"))
+        	return true;
     }
 
     // Consider weapon cost as fallback
@@ -1475,17 +1480,27 @@ bot_buy_wallbuy()
 	self endon("death");
 	self endon("disconnect");
 	level endon("end_game");
-	if(self maps\mp\zombies\_zm_weapons::has_weapon_or_upgrade("mp5k_zm") || self maps\mp\zombies\_zm_weapons::has_weapon_or_upgrade("pdw57_zm") || self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+	
+	// REMOVED the early return that prevented buying if they had good guns
+	if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
 	{
 		self CancelGoal("weaponBuy");
 		return;
 	}
+	
 	weapon = self GetCurrentWeapon();
 	weaponToBuy = undefined;
 	wallbuys = array_randomize(level._spawned_wallbuys);
+	
 	foreach(wallbuy in wallbuys)
 	{
-		if(Distance(wallbuy.origin, self.origin) < 400 && wallbuy.trigger_stub.cost <= self.score && bot_best_gun(wallbuy.trigger_stub.zombie_weapon_upgrade, weapon) && FindPath(self.origin, wallbuy.origin, undefined, 0, 1) && weapon != wallbuy.trigger_stub.zombie_weapon_upgrade && !is_offhand_weapon( wallbuy.trigger_stub.zombie_weapon_upgrade  ))
+		// INCREASED search range from 400 to 600 and SIMPLIFIED checks
+		if(Distance(wallbuy.origin, self.origin) < 600 && 
+		   wallbuy.trigger_stub.cost <= self.score && 
+		   bot_best_gun(wallbuy.trigger_stub.zombie_weapon_upgrade, weapon) && 
+		   FindPath(self.origin, wallbuy.origin, undefined, 0, 1) && 
+		   weapon != wallbuy.trigger_stub.zombie_weapon_upgrade && 
+		   !is_offhand_weapon(wallbuy.trigger_stub.zombie_weapon_upgrade))
 		{
 			if(!isdefined(wallbuy.trigger_stub))
 				return;
@@ -1495,11 +1510,13 @@ bot_buy_wallbuy()
 			break;
 		}
 	}
+	
 	if(!isdefined(weaponToBuy))
 		return;
+		
 	self AddGoal(weaponToBuy.origin, 75, 2, "weaponBuy");
-	//IPrintLn(weaponToBuy.zombie_weapon_upgrade);
-	while(!self AtGoal("weaponBuy") && !Distance(self.origin, weaponToBuy.origin) < 100)
+	
+	while(!self AtGoal("weaponBuy") && Distance(self.origin, weaponToBuy.origin) > 100)
 	{
 		wait 1;
 		if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
@@ -1508,13 +1525,13 @@ bot_buy_wallbuy()
 			return;
 		}
 	}
+	
 	self cancelgoal("weaponBuy");
 	self maps\mp\zombies\_zm_score::minus_to_player_score( weaponToBuy.trigger_stub.cost );
 	self TakeAllWeapons();
 	self GiveWeapon(weaponToBuy.trigger_stub.zombie_weapon_upgrade);
 	self SetSpawnWeapon(weaponToBuy.trigger_stub.zombie_weapon_upgrade);
-	//IPrintLn("Bot Bought Weapon");
-	
+	self SwitchToWeapon(weaponToBuy.trigger_stub.zombie_weapon_upgrade);
 }
 
 bot_buy_door()
@@ -2116,6 +2133,10 @@ bot_should_take_weapon(boxWeapon, currentWeapon)
     // Check if we already have this weapon
     if(self HasWeapon(boxWeapon))
         return false;
+    
+    // ALWAYS upgrade from starting pistol
+    if(IsSubStr(currentWeapon, "m1911"))
+    	return true;
         
     // Always take wonder weapons
     if(IsSubStr(boxWeapon, "raygun") || 

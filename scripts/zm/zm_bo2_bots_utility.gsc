@@ -183,3 +183,106 @@ array_contains(array, value)
 	
 	return false;
 }
+
+// Get nearest navigation node to a given origin
+bot_nearest_node(origin)
+{
+	if(!isDefined(origin))
+		return undefined;
+		
+	nodes = GetNodesInRadius(origin, 256, 0);
+	
+	if(!isDefined(nodes) || nodes.size == 0)
+		return undefined;
+		
+	closest_node = undefined;
+	closest_dist_sq = 999999;
+	
+	foreach(node in nodes)
+	{
+		if(!isDefined(node) || !isDefined(node.origin))
+			continue;
+			
+		dist_sq = DistanceSquared(origin, node.origin);
+		
+		if(dist_sq < closest_dist_sq)
+		{
+			closest_dist_sq = dist_sq;
+			closest_node = node;
+		}
+	}
+	
+	return closest_node;
+}
+
+// Bot powerup pickup logic
+bot_pickup_powerup()
+{
+	if(!isDefined(self.bot))
+		return;
+		
+	// Check every 1 second
+	if(isDefined(self.bot.powerup_check_time) && GetTime() < self.bot.powerup_check_time)
+		return;
+		
+	self.bot.powerup_check_time = GetTime() + 1000;
+	
+	// Don't pickup during laststand
+	if(self maps\mp\zombies\_zm_laststand::player_is_in_laststand())
+		return;
+		
+	// Find active powerups
+	powerups = level.active_powerups;
+	
+	if(!isDefined(powerups) || powerups.size == 0)
+		return;
+		
+	closest_powerup = undefined;
+	closest_dist_sq = 160000; // 400^2
+	
+	foreach(powerup in powerups)
+	{
+		if(!isDefined(powerup) || !isDefined(powerup.origin))
+			continue;
+			
+		// Skip if powerup is being grabbed
+		if(isDefined(powerup.claimed) && powerup.claimed)
+			continue;
+			
+		dist_sq = DistanceSquared(self.origin, powerup.origin);
+		
+		if(dist_sq < closest_dist_sq)
+		{
+			// Check if reachable
+			if(FindPath(self.origin, powerup.origin, undefined, 0, 1))
+			{
+				closest_dist_sq = dist_sq;
+				closest_powerup = powerup;
+			}
+		}
+	}
+	
+	// Navigate to powerup
+	if(isDefined(closest_powerup))
+	{
+		// Close enough to pick up
+		if(closest_dist_sq < 10000) // 100^2
+		{
+			if(self hasgoal("powerup"))
+				self cancelgoal("powerup");
+				
+			// Move towards powerup
+			self lookat(closest_powerup.origin);
+		}
+		// Too far, add goal to move there
+		else if(!self hasgoal("powerup") || DistanceSquared(self GetGoal("powerup"), closest_powerup.origin) > 2500)
+		{
+			self AddGoal(closest_powerup.origin, 64, 2, "powerup");
+		}
+	}
+	else if(self hasgoal("powerup"))
+	{
+		// No powerups nearby, cancel goal
+		self cancelgoal("powerup");
+	}
+}

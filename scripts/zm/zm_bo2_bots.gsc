@@ -1,7 +1,7 @@
 // T6 GSC SOURCE
 // Compiler version 0 (prec2)
 // Enhanced AI Bot System with Performance Optimizations
-// TranZit Revamped Integration Added
+// TranZit Bus Awareness Added
 
 #include maps\mp\zombies\_zm_utility;
 #include common_scripts\utility;
@@ -33,6 +33,10 @@ bot_spawn()
 	self thread bot_main();
 	self thread bot_check_player_blocking();
 	self thread bot_give_starting_perks();
+	
+	// TranZit bus awareness
+	if(level.script == "zm_transit")
+		self thread bot_bus_navigation();
 }
 
 // Give bots Quick Revive and Juggernog at spawn
@@ -100,10 +104,6 @@ init()
 	// Initialize map specific logic
 	if(level.script == "zm_tomb")
 		level thread scripts\zm\zm_bo2_bots_origins::init();
-	
-	// Initialize TranZit Revamped integration
-	if(level.script == "zm_transit")
-		level thread scripts\zm\zm_bo2_bots_tranzit::init();
 }
 
 bot_set_skill()
@@ -174,6 +174,64 @@ bot_get_closest_enemy(origin)
 		return enemies[0];
 		
 	return undefined;
+}
+
+// TranZit bus navigation
+bot_bus_navigation()
+{
+	self endon("disconnect");
+	level endon("end_game");
+	
+	// Wait for bot initialization
+	while(!isDefined(self.bot))
+		wait 0.05;
+	
+	// Initialize bus awareness
+	self.bot.bus_nearby = false;
+	self.bot.bus_location = undefined;
+	
+	while(true)
+	{
+		wait 10;
+		
+		if(!self.is_bot)
+			continue;
+		
+		// Check if bus exists and is nearby
+		bus = get_closest_bus();
+		
+		if(!isDefined(bus))
+		{
+			self.bot.bus_nearby = false;
+			self.bot.bus_location = undefined;
+			continue;
+		}
+		
+		distance_to_bus = distance(self.origin, bus.origin);
+		
+		// If bus is close, set awareness flags
+		if(distance_to_bus < 500)
+		{
+			self.bot.bus_nearby = true;
+			self.bot.bus_location = bus.origin;
+		}
+		else
+		{
+			self.bot.bus_nearby = false;
+			self.bot.bus_location = undefined;
+		}
+	}
+}
+
+get_closest_bus()
+{
+	// Find the bus entity
+	buses = getEntArray("transit_bus", "targetname");
+	
+	if(!isDefined(buses) || buses.size == 0)
+		return undefined;
+	
+	return buses[0];
 }
 
 bot_buy_box()

@@ -1,13 +1,13 @@
-#include maps\\mp\\zombies\\_zm_utility;
-#include common_scripts\\utility;
-#include maps\\mp\\_utility;
-#include maps\\mp\\zombies\\_zm_score;
-#include maps\\mp\\zombies\\_zm_laststand;
-#include maps\\mp\\zombies\\_zm_weapons;
-#include maps\\mp\\zombies\\_zm_blockers;
-#include maps\\mp\\zombies\\_zm_powerups;
-#include scripts\\zm\\zm_bo2_bots_combat;
-#include scripts\\zm\\zm_bo2_bots_utility; // Added include for utility functions
+#include maps\mp\zombies\_zm_utility;
+#include common_scripts\utility;
+#include maps\mp\_utility;
+#include maps\mp\zombies\_zm_score;
+#include maps\mp\zombies\_zm_laststand;
+#include maps\mp\zombies\_zm_weapons;
+#include maps\mp\zombies\_zm_blockers;
+#include maps\mp\zombies\_zm_powerups;
+#include scripts\zm\zm_bo2_bots_combat;
+#include scripts\zm\zm_bo2_bots_utility; // Added include for utility functions
 
 
 // Bot action constants

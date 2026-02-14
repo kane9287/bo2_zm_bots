@@ -663,7 +663,11 @@ bot_update_aim( frames )
 	if ( !threat_is_player() )
 	{
 		height = ent getcentroid()[ 2 ] - prediction[ 2 ];
-		return prediction + ( 0, 0, height );
+		
+		// NEW: Aim for headshots - higher offset
+		headshot_offset = 18;
+		
+		return prediction + ( 0, 0, height + headshot_offset );
 	}
 	height = ent getplayerviewheight();
 	torso = prediction + ( 0, 0, height / 1.6 );
@@ -921,4 +925,146 @@ threat_is_player()
 		return 1;
 	}
 	return 0;
+}
+
+// NEW: Trap activation logic
+bot_use_trap()
+{
+	if(!isDefined(self.bot.trap_check_time) || GetTime() > self.bot.trap_check_time)
+	{
+		self.bot.trap_check_time = GetTime() + 4000; // Check every 4 seconds
+		
+		// Skip if broke or power is off
+		if(self.score < 1000 || !flag("power_on"))
+			return;
+			
+		// Only use traps if zombies are nearby
+		zombies = self bot_get_cached_zombies();
+		nearby_zombies = 0;
+		
+		foreach(zombie in zombies)
+		{
+			if(Distance(self.origin, zombie.origin) < 350)
+				nearby_zombies++;
+		}
+		
+		// Need at least 5 zombies nearby to justify trap cost
+		if(nearby_zombies < 5)
+			return;
+			
+		// Find trap triggers (generic detection)
+		trap_triggers = GetEntArray("zombie_trap", "targetname");
+		
+		closest_trap = undefined;
+		closest_dist = 250;
+		
+		foreach(trap in trap_triggers)
+		{
+			if(!isDefined(trap) || !isDefined(trap.origin))
+				continue;
+				
+			// Skip if trap is on cooldown
+			if(isDefined(trap.bot_trap_cooldown) && GetTime() < trap.bot_trap_cooldown)
+				continue;
+				
+			dist = Distance(self.origin, trap.origin);
+			if(dist < closest_dist)
+			{
+				closest_trap = trap;
+				closest_dist = dist;
+			}
+		}
+		
+		if(isDefined(closest_trap))
+		{
+			// Get cost
+			trap_cost = 1000;
+			if(isDefined(closest_trap.zombie_cost))
+				trap_cost = closest_trap.zombie_cost;
+				
+			if(self.score >= trap_cost)
+			{
+				self lookat(closest_trap.origin);
+				wait 0.2;
+				
+				self maps\mp\zombies\_zm_score::minus_to_player_score(trap_cost);
+				
+				// Trigger trap
+				if(isDefined(closest_trap.unitrigger_stub) && isDefined(closest_trap.unitrigger_stub.trigger))
+					closest_trap.unitrigger_stub.trigger notify("trigger", self);
+				else
+					closest_trap notify("trigger", self);
+				
+				// Set cooldown (25 seconds)
+				closest_trap.bot_trap_cooldown = GetTime() + 25000;
+				
+				self.bot.trap_check_time = GetTime() + 10000; // Personal cooldown
+			}
+		}
+	}
+}
+
+// NEW: Smart kiting/training logic
+bot_smart_kiting()
+{
+	// Only kite in higher rounds where it's necessary
+	if(level.round_number < 8)
+		return;
+		
+	if(!isDefined(self.bot.kite_check_time) || GetTime() > self.bot.kite_check_time)
+	{
+		self.bot.kite_check_time = GetTime() + 1500; // Check frequently
+		
+		zombies = self bot_get_cached_zombies();
+		nearby_zombies = 0;
+		zombie_center = (0, 0, 0);
+		
+		// Find zombie swarm center point
+		foreach(zombie in zombies)
+		{
+			dist = Distance(self.origin, zombie.origin);
+			if(dist < 500)
+			{
+				nearby_zombies++;
+				zombie_center += zombie.origin;
+			}
+		}
+		
+		// If enough zombies for training (7+)
+		if(nearby_zombies >= 7)
+		{
+			zombie_center = zombie_center / nearby_zombies;
+			
+			// Direction away from zombie horde
+			escape_vector = VectorNormalize(self.origin - zombie_center);
+			
+			// Perpendicular vector for circular motion
+			right_vector = (-escape_vector[1], escape_vector[0], 0);
+			
+			// Initialize kite direction
+			if(!isDefined(self.bot.kite_direction))
+				self.bot.kite_direction = 1;
+				
+			// Calculate circular kiting position
+			kite_target = self.origin + (escape_vector * 250) + (right_vector * 180 * self.bot.kite_direction);
+			
+			// Validate path
+			if(FindPath(self.origin, kite_target, undefined, 0, 1))
+			{
+				if(!self hasgoal("kiting") || Distance(self GetGoal("kiting"), kite_target) > 150)
+				{
+					self AddGoal(kite_target, 80, 2, "kiting");
+				}
+				
+				// Randomly switch kiting direction
+				if(randomfloat(1) < 0.15)
+					self.bot.kite_direction *= -1;
+			}
+		}
+		else if(nearby_zombies < 4 && self hasgoal("kiting"))
+		{
+			// Stop kiting when horde is small
+			self cancelgoal("kiting");
+		}
+	}
 }

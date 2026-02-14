@@ -13,6 +13,7 @@
 #include maps\mp\zombies\_zm_perks;
 #include scripts\zm\zm_bo2_bots_combat;
 #include scripts\zm\zm_bo2_bots_utility;
+#include scripts\zm\zm_bo2_bots_barrier_rebuild;
 
 // Bot action constants
 #define BOT_ACTION_STAND "stand"
@@ -86,6 +87,9 @@ init()
 
 	if(!isdefined(level.bots))
 		level.bots = [];
+
+	// Initialize barrier rebuild system
+	scripts\zm\zm_bo2_bots_barrier_rebuild::init();
 
 	bot_amount = GetDvarIntDefault("bo2_zm_bots_count", 2);
 
@@ -526,6 +530,7 @@ bot_main()
 	self.bot.last_pap_check = 0;
 	self.bot.last_door_check = 0;
 	self.bot.last_debris_check = 0;
+	self.bot.last_barrier_check = 0;
 	
 	// Entity caches
 	self.bot.cached_doors = [];
@@ -580,6 +585,13 @@ bot_main()
 		{
 			self.bot.last_debris_check = GetTime() + 2000;
 			self bot_clear_nearest_debris();
+		}
+		
+		// Barrier rebuild (check every 5 seconds)
+		if(GetTime() > self.bot.last_barrier_check)
+		{
+			self.bot.last_barrier_check = GetTime() + 5000;
+			self scripts\zm\zm_bo2_bots_barrier_rebuild::bot_rebuild_barriers();
 		}
 		
 		// Continuous tasks

@@ -52,16 +52,16 @@ bot_combat_think( damage, attacker, direction )
 			}
 		}
 		if(self GetCurrentWeapon() == "none")
-			return;
+			continue; // FIXED: Changed from return to continue
 			
 		// Use cached zombie list for better performance
 		sight = self bot_best_enemy_enhanced();
 		if(!isdefined(self.bot.threat.entity))
-			return;
+			continue; // FIXED: Changed from return to continue
 		if ( threat_dead() )
 		{
 			self bot_combat_dead();
-			return;
+			continue; // FIXED: Changed from return to continue
 		}
 		//ADD OTHER COMBAT TASKS HERE.
 		self bot_combat_main();
@@ -91,7 +91,7 @@ bot_combat_think( damage, attacker, direction )
 		// NEW: Strafe while in combat
 		self bot_combat_strafe();
 		
-		wait 0.02; // Reduced from 0.05 for faster reaction times
+		wait 0.05; // OPTIMIZED: Changed from 0.02 to 0.05 for better performance
 	}
 }
 

@@ -1,6 +1,7 @@
 // T6 GSC SOURCE
 // Compiler version 0 (prec2)
 // Enhanced AI Bot System with Performance Optimizations
+// TranZit Revamped Integration Added
 
 #include maps\mp\zombies\_zm_utility;
 #include common_scripts\utility;
@@ -99,6 +100,10 @@ init()
 	// Initialize map specific logic
 	if(level.script == "zm_tomb")
 		level thread scripts\zm\zm_bo2_bots_origins::init();
+	
+	// Initialize TranZit Revamped integration
+	if(level.script == "zm_transit")
+		level thread scripts\zm\zm_bo2_bots_tranzit::init();
 }
 
 bot_set_skill()

@@ -16,6 +16,8 @@ bot_combat_think( damage, attacker, direction )
 		self.bot.last_follow_pos = (0,0,0);
 	if(!isDefined(self.bot.last_knife_time))
 		self.bot.last_knife_time = 0;
+	if(!isDefined(self.bot.last_evasion_time))
+		self.bot.last_evasion_time = 0;
 	
 	for ( ;; )
 	{
@@ -26,16 +28,20 @@ bot_combat_think( damage, attacker, direction )
 		if(self atgoal("flee"))
 			self cancelgoal("flee");
 			
-		// Check if bot is overwhelmed and needs to panic
+		// ENHANCED: Check if bot is overwhelmed and needs to panic
 		self bot_check_overwhelmed();
 		
-		//FLEE CODE. IF ZOMBIE IS CLOSE TO BOT, BOT WILL TRY TO FIND A PLACE TO RUN AWAY
-		//LOOKING FOR ANOTHER ALTERNATIVE IF DOORS ARE CLOSED AND THE BOT CAN NOT REACH SAID PATH.
-		if(Distance(self.origin, self.bot.threat.position) <= 75 || isdefined(damage))
+		// ENHANCED: Continuous evasive movement (all rounds)
+		self bot_maintain_safe_distance();
+		
+		// ENHANCED: Better flee logic with increased trigger distance
+		if(Distance(self.origin, self.bot.threat.position) <= 180 || isdefined(damage))
 		{
 			nodes = getnodesinradiussorted( self.origin, 1024, 256, 512 );
-			nearest = bot_nearest_node(self.origin);			if ( isDefined( nearest ) && !self hasgoal( "flee" ) )
-			{				foreach ( node in nodes )
+			nearest = bot_nearest_node(self.origin);
+			if ( isDefined( nearest ) && !self hasgoal( "flee" ) )
+			{
+				foreach ( node in nodes )
 				{
 					if ( !NodeVisible( nearest.origin, node.origin ) && FindPath(self.origin, node.origin, undefined, 0, 1) )
 					{
@@ -82,31 +88,38 @@ bot_combat_think( damage, attacker, direction )
 		// Maintain formation with other bots
 		self bot_maintain_formation();
 		
+		// NEW: Strafe while in combat
+		self bot_combat_strafe();
+		
 		wait 0.02; // Reduced from 0.05 for faster reaction times
 	}
 }
 
-// NEW: Check if bot is overwhelmed by zombies
+// ENHANCED: Check if bot is overwhelmed by zombies (lowered threshold)
 bot_check_overwhelmed()
 {
 	// Count nearby zombies using cached list
 	zombies = self bot_get_cached_zombies();
 	nearby_count = 0;
+	very_close_count = 0;
 	
 	foreach(zombie in zombies)
 	{
-		if(Distance(self.origin, zombie.origin) < 200)
+		dist = Distance(self.origin, zombie.origin);
+		if(dist < 250)
 			nearby_count++;
+		if(dist < 120)
+			very_close_count++;
 	}
 	
-	// If 5+ zombies close, prioritize escape
-	if(nearby_count >= 5)
+	// ENHANCED: Trigger panic at 3+ zombies (was 5+) or if 2+ are very close
+	if(nearby_count >= 3 || very_close_count >= 2)
 	{
 		self.bot.panic_mode = true;
-		self.bot.panic_time = GetTime() + 3000;
+		self.bot.panic_time = GetTime() + 2500;
 		
-		// Find furthest node
-		nodes = getnodesinradiussorted(self.origin, 512, 0);
+		// Find furthest node with better range
+		nodes = getnodesinradiussorted(self.origin, 768, 0);
 		if(nodes.size > 0)
 		{
 			// Take farthest node
@@ -118,6 +131,96 @@ bot_check_overwhelmed()
 	{
 		self.bot.panic_mode = undefined;
 		self cancelgoal("panic");
+	}
+}
+
+// NEW: Maintain safe distance from zombies at all times
+bot_maintain_safe_distance()
+{
+	// Check periodically
+	if(isDefined(self.bot.last_distance_check) && GetTime() < self.bot.last_distance_check)
+		return;
+		
+	self.bot.last_distance_check = GetTime() + 500; // Check every 0.5 seconds
+	
+	zombies = self bot_get_cached_zombies();
+	if(!isDefined(zombies) || zombies.size == 0)
+		return;
+		
+	// Find closest zombie
+	closest_zombie = undefined;
+	closest_dist = 99999;
+	
+	foreach(zombie in zombies)
+	{
+		dist = Distance(self.origin, zombie.origin);
+		if(dist < closest_dist)
+		{
+			closest_dist = dist;
+			closest_zombie = zombie;
+		}
+	}
+	
+	// ENHANCED: Maintain 200+ unit distance from nearest zombie
+	if(isDefined(closest_zombie) && closest_dist < 200)
+	{
+		// Calculate direction away from zombie
+		escape_dir = VectorNormalize(self.origin - closest_zombie.origin);
+		
+		// Move away
+		escape_pos = self.origin + (escape_dir * 250);
+		
+		// Validate path
+		if(FindPath(self.origin, escape_pos, undefined, 0, 1))
+		{
+			if(!self hasgoal("spacing") || Distance(self GetGoal("spacing"), escape_pos) > 100)
+			{
+				self AddGoal(escape_pos, 50, 3, "spacing"); // High priority
+			}
+		}
+	}
+	else if(closest_dist >= 200 && self hasgoal("spacing"))
+	{
+		self cancelgoal("spacing");
+	}
+}
+
+// NEW: Strafe movement during combat
+bot_combat_strafe()
+{
+	if(!isDefined(self.bot.threat.entity))
+		return;
+		
+	// Only strafe periodically
+	if(isDefined(self.bot.last_strafe_time) && GetTime() < self.bot.last_strafe_time)
+		return;
+		
+	self.bot.last_strafe_time = GetTime() + randomintrange(800, 1500);
+	
+	enemy = self.bot.threat.entity;
+	dist = Distance(self.origin, enemy.origin);
+	
+	// Only strafe if enemy is medium-close range
+	if(dist > 100 && dist < 400)
+	{
+		// Get direction to enemy
+		to_enemy = VectorNormalize(enemy.origin - self.origin);
+		
+		// Get perpendicular direction (left or right)
+		strafe_dir = (-to_enemy[1], to_enemy[0], 0);
+		
+		// Randomly choose left or right
+		if(randomfloat(1) > 0.5)
+			strafe_dir = -strafe_dir;
+			
+		// Calculate strafe position
+		strafe_pos = self.origin + (strafe_dir * 150);
+		
+		// Validate path exists
+		if(FindPath(self.origin, strafe_pos, undefined, 0, 1))
+		{
+			self AddGoal(strafe_pos, 50, 2, "strafe");
+		}
 	}
 }
 
@@ -1004,16 +1107,16 @@ bot_use_trap()
 	}
 }
 
-// NEW: Smart kiting/training logic
+// ENHANCED: Smart kiting/training logic (now works at all rounds)
 bot_smart_kiting()
 {
-	// Only kite in higher rounds where it's necessary
-	if(level.round_number < 8)
+	// CHANGED: Lowered round requirement from 8 to 3 for earlier kiting
+	if(level.round_number < 3)
 		return;
 		
 	if(!isDefined(self.bot.kite_check_time) || GetTime() > self.bot.kite_check_time)
 	{
-		self.bot.kite_check_time = GetTime() + 1500; // Check frequently
+		self.bot.kite_check_time = GetTime() + 1000; // Check more frequently
 		
 		zombies = self bot_get_cached_zombies();
 		nearby_zombies = 0;
@@ -1030,8 +1133,8 @@ bot_smart_kiting()
 			}
 		}
 		
-		// If enough zombies for training (7+)
-		if(nearby_zombies >= 7)
+		// CHANGED: Lowered threshold from 7+ to 5+ zombies
+		if(nearby_zombies >= 5)
 		{
 			zombie_center = zombie_center / nearby_zombies;
 			
@@ -1061,7 +1164,7 @@ bot_smart_kiting()
 					self.bot.kite_direction *= -1;
 			}
 		}
-		else if(nearby_zombies < 4 && self hasgoal("kiting"))
+		else if(nearby_zombies < 3 && self hasgoal("kiting"))
 		{
 			// Stop kiting when horde is small
 			self cancelgoal("kiting");

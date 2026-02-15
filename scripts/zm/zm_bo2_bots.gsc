@@ -40,26 +40,67 @@ spawn_bot()
 	}
 	
 	// Wait for bot to connect
-	while(!isDefined(bot.pers["team"]))
+	while(!isDefined(bot.pers))
 		wait 0.05;
 		
-	// Assign bot to correct team
-	bot.pers["team"] = level.players[0].pers["team"];
-	bot.team = level.players[0].team;
-	bot.sessionteam = level.players[0].sessionteam;
+	// Assign bot to correct team (zombies uses spectator as initial team)
+	if(isDefined(level.players) && level.players.size > 0)
+	{
+		player_team = "allies";
+		
+		// Find first human player's team
+		foreach(player in level.players)
+		{
+			if(!isDefined(player.is_bot) || !player.is_bot)
+			{
+				if(isDefined(player.team))
+					player_team = player.team;
+				break;
+			}
+		}
+		
+		bot.pers["team"] = player_team;
+		bot.team = player_team;
+		bot.sessionteam = player_team;
+	}
+	else
+	{
+		bot.pers["team"] = "allies";
+		bot.team = "allies";
+		bot.sessionteam = "allies";
+	}
 	
-	// Spawn the bot
-	bot [[level.spawnPlayer]]();
+	// Mark as bot before spawning
+	bot.is_bot = true;
 	
-	// Wait for bot to spawn
-	while(!isalive(bot))
+	// Set zombie-specific flags
+	bot.characterindex = randomint(4);
+	bot.entity_num = bot getentitynumber();
+	
+	// Wait a frame
+	wait 0.1;
+	
+	// Force spawn the bot
+	bot notify("menuresponse", GetDvar("g_gametype"), "class0");
+	
+	// Wait for bot to actually spawn
+	start_time = GetTime();
+	while(!isalive(bot) && (GetTime() - start_time) < 5000)
 		wait 0.05;
+		
+	if(!isalive(bot))
+	{
+		iprintln("^1Error: Bot failed to spawn in 5 seconds");
+		return undefined;
+	}
 		
 	// Initialize bot after spawn
 	bot thread bot_spawn();
 	
 	// Start combat system
 	bot thread on_bot_spawned();
+	
+	iprintln("^2Bot spawned successfully");
 	
 	return bot;
 }
@@ -172,8 +213,11 @@ init()
 	for(i=0; i<bot_amount; i++)
 	{
 		bot_entity = spawn_bot();
-		level.bots[level.bots.size] = bot_entity;
-		wait 1;
+		
+		if(isDefined(bot_entity))
+			level.bots[level.bots.size] = bot_entity;
+			
+		wait 2; // Increased delay between bot spawns
 	}
 
 	// Initialize map specific logic

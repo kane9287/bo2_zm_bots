@@ -27,6 +27,81 @@
 #define BOT_GOAL_PRIORITY_CRITICAL 4
 #define BOT_GOAL_PRIORITY_EMERGENCY 5
 
+// Spawn a bot entity
+spawn_bot()
+{
+	// Use T6 bot spawning system
+	bot = AddTestClient();
+	
+	if(!isDefined(bot))
+	{
+		iprintln("^1Error: Failed to add bot");
+		return undefined;
+	}
+	
+	// Wait for bot to connect
+	while(!isDefined(bot.pers["team"]))
+		wait 0.05;
+		
+	// Assign bot to correct team
+	bot.pers["team"] = level.players[0].pers["team"];
+	bot.team = level.players[0].team;
+	bot.sessionteam = level.players[0].sessionteam;
+	
+	// Spawn the bot
+	bot [[level.spawnPlayer]]();
+	
+	// Wait for bot to spawn
+	while(!isalive(bot))
+		wait 0.05;
+		
+	// Initialize bot after spawn
+	bot thread bot_spawn();
+	
+	// Start combat system
+	bot thread on_bot_spawned();
+	
+	return bot;
+}
+
+// Called when bot spawns
+on_bot_spawned()
+{
+	self endon("disconnect");
+	level endon("end_game");
+	
+	while(true)
+	{
+		self waittill("spawned_player");
+		
+		// Re-initialize bot data
+		if(!isDefined(self.bot))
+			self bot_spawn_init();
+			
+		// Start combat monitoring
+		self thread on_bot_damage();
+	}
+}
+
+// Monitor bot damage for combat responses
+on_bot_damage()
+{
+	self endon("disconnect");
+	self endon("death");
+	level endon("end_game");
+	
+	while(true)
+	{
+		self waittill("damage", damage, attacker, direction_vec, point, type, modelName, tagName, partName, dflags, weapon);
+		
+		if(!isDefined(attacker) || !isalive(attacker))
+			continue;
+			
+		// Start combat think if attacked
+		self thread bot_combat_think(damage, attacker, direction_vec);
+	}
+}
+
 bot_spawn()
 {
 	self bot_spawn_init();

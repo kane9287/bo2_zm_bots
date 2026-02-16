@@ -1,6 +1,5 @@
 // T6 GSC SOURCE
 // Compiler version 0 (prec2)
-// Enhanced AI Combat System with Optimizations
 
 #include maps\mp\zombies\_zm_utility;
 #include common_scripts\utility;
@@ -14,21 +13,12 @@ bot_combat_think(damage, attacker, direction)
 	self endon("disconnect");
 	level endon("game_ended");
 	
+	// Early exit if can't do combat
 	if(!bot_can_do_combat())
 		return;
 	
 	self allowattack(0);
 	self pressads(0);
-	
-	// Initialize AI enhancement variables
-	if(!isDefined(self.bot.entity_cache_time))
-		self.bot.entity_cache_time = 0;
-	if(!isDefined(self.bot.last_follow_pos))
-		self.bot.last_follow_pos = (0,0,0);
-	if(!isDefined(self.bot.last_knife_time))
-		self.bot.last_knife_time = 0;
-	if(!isDefined(self.bot.last_evasion_time))
-		self.bot.last_evasion_time = 0;
 	
 	for(;;)
 	{
@@ -38,14 +28,8 @@ bot_combat_think(damage, attacker, direction)
 		if(self atgoal("flee"))
 			self cancelgoal("flee");
 			
-		// ENHANCED: Check if bot is overwhelmed
-		self bot_check_overwhelmed();
-		
-		// ENHANCED: Maintain safe distance
-		self bot_maintain_safe_distance();
-			
-		// ENHANCED: Better flee logic with increased trigger distance (180 units)
-		if(Distance(self.origin, self.bot.threat.position) <= 180 || isdefined(damage))
+		// FLEE CODE - If zombie is close, bot will run away
+		if(Distance(self.origin, self.bot.threat.position) <= 75 || isdefined(damage))
 		{
 			nodes = getnodesinradiussorted(self.origin, 1024, 256, 512);
 			nearest = bot_nearest_node(self.origin);
@@ -64,722 +48,181 @@ bot_combat_think(damage, attacker, direction)
 		}
 		
 		if(self GetCurrentWeapon() == "none")
-			continue;
+			return;
 			
-		// Use cached zombie list for better performance
-		sight = self bot_best_enemy_enhanced();
+		sight = self bot_best_enemy();
 		
 		if(!isdefined(self.bot.threat.entity))
-			continue;
+			return;
 			
 		if(threat_dead())
 		{
 			self bot_combat_dead();
-			continue;
+			return;
 		}
-		
-		// Fire coordination to prevent redundant targeting
-		self bot_coordinate_fire();
 		
 		self bot_combat_main();
 		self bot_pickup_powerup();
 		
+		// Initialize door coordination and mystery box tracking if not defined
+		if(!isDefined(level.door_being_opened))
+			level.door_being_opened = false;
+			
+		if(!isDefined(level.mystery_box_teddy_locations))
+			level.mystery_box_teddy_locations = [];
+		
+		// Safe door opening - prevents multiple bots from trying to open the same door
+		self bot_safely_interact_with_doors();
+		
+		// Mystery box safety check - prevents using teddy bear boxes
+		self bot_safely_use_mystery_box();
+		
+		// Revive logic
 		if(is_true(level.using_bot_revive_logic))
 			self bot_revive_teammates();
-		
-		// Maintain formation with other bots
-		self bot_maintain_formation();
-		
-		// Combat strafe
-		self bot_combat_strafe();
-		
-		// Tactical positioning
-		self bot_use_tactical_positioning();
-		
-		// Trap usage
-		self bot_use_trap();
-		
-		// Smart kiting
-		self bot_smart_kiting();
-		
+			
 		wait 0.05;
 	}
 }
 
-// ENHANCED: Check if bot is overwhelmed (lowered threshold)
-bot_check_overwhelmed()
+// Prevents multiple bots from trying to open the same door at once
+bot_safely_interact_with_doors()
 {
-	zombies = self bot_get_cached_zombies();
-	nearby_count = 0;
-	very_close_count = 0;
-	
-	foreach(zombie in zombies)
-	{
-		dist_sq = DistanceSquared(self.origin, zombie.origin);
-		if(dist_sq < 62500) // 250^2
-			nearby_count++;
-		if(dist_sq < 14400) // 120^2
-			very_close_count++;
-	}
-	
-	// Trigger panic at 3+ zombies or if 2+ are very close
-	if(nearby_count >= 3 || very_close_count >= 2)
-	{
-		self.bot.panic_mode = true;
-		self.bot.panic_time = GetTime() + 2500;
-		
-		nodes = getnodesinradiussorted(self.origin, 768, 0);
-		if(nodes.size > 0)
-		{
-			escape_node = nodes[nodes.size - 1];
-			self AddGoal(escape_node.origin, 50, 5, "panic");
-		}
-	}
-	else if(isDefined(self.bot.panic_mode) && GetTime() > self.bot.panic_time)
-	{
-		self.bot.panic_mode = undefined;
-		self cancelgoal("panic");
-	}
-}
-
-// Maintain safe distance from zombies
-bot_maintain_safe_distance()
-{
-	if(isDefined(self.bot.last_distance_check) && GetTime() < self.bot.last_distance_check)
+	// Don't try to open doors if another bot is already doing it
+	if(is_true(level.door_being_opened))
 		return;
-		
-	self.bot.last_distance_check = GetTime() + 500;
-	
-	zombies = self bot_get_cached_zombies();
-	if(!isDefined(zombies) || zombies.size == 0)
-		return;
-		
-	closest_zombie = undefined;
-	closest_dist_sq = 999999;
-	
-	foreach(zombie in zombies)
-	{
-		dist_sq = DistanceSquared(self.origin, zombie.origin);
-		if(dist_sq < closest_dist_sq)
-		{
-			closest_dist_sq = dist_sq;
-			closest_zombie = zombie;
-		}
-	}
-	
-	// Maintain 200+ unit distance from nearest zombie
-	if(isDefined(closest_zombie) && closest_dist_sq < 40000) // 200^2
-	{
-		escape_dir = VectorNormalize(self.origin - closest_zombie.origin);
-		escape_pos = self.origin + (escape_dir * 250);
-		
-		if(FindPath(self.origin, escape_pos, undefined, 0, 1))
-		{
-			if(!self hasgoal("spacing") || DistanceSquared(self GetGoal("spacing"), escape_pos) > 10000)
-				self AddGoal(escape_pos, 50, 3, "spacing");
-		}
-	}
-	else if(closest_dist_sq >= 40000 && self hasgoal("spacing"))
-	{
-		self cancelgoal("spacing");
-	}
-}
 
-// Strafe movement during combat
-bot_combat_strafe()
-{
-	if(!isDefined(self.bot.threat.entity))
-		return;
-		
-	if(isDefined(self.bot.last_strafe_time) && GetTime() < self.bot.last_strafe_time)
-		return;
-		
-	self.bot.last_strafe_time = GetTime() + randomintrange(800, 1500);
+	// Check if we're near a door
+	door_triggers = getEntArray("zombie_door", "targetname");
+	door_triggers = array_combine(door_triggers, getEntArray("zombie_debris", "targetname"));
+	door_triggers = array_combine(door_triggers, getEntArray("zombie_airlock_buy", "targetname"));
 	
-	enemy = self.bot.threat.entity;
-	dist_sq = DistanceSquared(self.origin, enemy.origin);
+	closest_dist = 999999;
+	closest_door = undefined;
 	
-	// Only strafe if enemy is medium-close range (100-400)
-	if(dist_sq > 10000 && dist_sq < 160000) // 100^2 and 400^2
+	foreach(door in door_triggers)
 	{
-		to_enemy = VectorNormalize(enemy.origin - self.origin);
-		strafe_dir = (-to_enemy[1], to_enemy[0], 0);
-		
-		if(randomfloat(1) > 0.5)
-			strafe_dir = -strafe_dir;
-			
-		strafe_pos = self.origin + (strafe_dir * 150);
-		
-		if(FindPath(self.origin, strafe_pos, undefined, 0, 1))
-			self AddGoal(strafe_pos, 50, 2, "strafe");
-	}
-}
-
-// Cache zombie list for performance
-bot_get_cached_zombies()
-{
-	if(!isDefined(self.bot.entity_cache_time) || GetTime() > self.bot.entity_cache_time)
-	{
-		self.bot.cached_zombies = getaispeciesarray(level.zombie_team, "all");
-		self.bot.entity_cache_time = GetTime() + 500;
-	}
-	
-	return self.bot.cached_zombies;
-}
-
-// Enhanced enemy selection with threat scoring
-bot_best_enemy_enhanced()
-{
-	enemies = self bot_get_cached_zombies();
-	
-	if(!isDefined(enemies) || enemies.size == 0)
-		return 0;
-		
-	best_enemy = undefined;
-	best_score = -1;
-	
-	foreach(enemy in enemies)
-	{
-		if(threat_should_ignore(enemy))
+		if(!isDefined(door))
 			continue;
 			
-		if(!self botsighttracepassed(enemy))
-			continue;
-			
-		score = bot_calculate_threat_score(enemy);
-		
-		if(score > best_score)
+		dist = Distance(self.origin, door.origin);
+		if(dist < closest_dist && dist < 80) // Only consider doors within 80 units
 		{
-			best_score = score;
-			best_enemy = enemy;
+			closest_dist = dist;
+			closest_door = door;
 		}
 	}
 	
-	if(isDefined(best_enemy))
+	// If we're near a door, try to open it safely
+	if(isDefined(closest_door))
 	{
-		self.bot.threat.entity = best_enemy;
-		self.bot.threat.time_first_sight = GetTime();
-		self.bot.threat.time_recent_sight = GetTime();
-		self.bot.threat.dot = bot_dot_product(best_enemy.origin);
-		self.bot.threat.position = best_enemy.origin;
-		return 1;
-	}
-	
-	return 0;
-}
-
-// Calculate threat priority score
-bot_calculate_threat_score(zombie)
-{
-	score = 0;
-	dist = Distance(self.origin, zombie.origin);
-	
-	// Distance priority (closer = higher threat)
-	score += (1000 - dist) * 2;
-	
-	// Special zombie types
-	if(isDefined(zombie.is_brutus) && zombie.is_brutus)
-		score += 500;
-	
-	// Zombies attacking downed teammates
-	players = get_players();
-	foreach(player in players)
-	{
-		if(DistanceSquared(player.origin, zombie.origin) < 10000 && // 100^2
-		   player maps\mp\zombies\_zm_laststand::player_is_in_laststand())
-			score += 300;
-	}
-	
-	// Zombies near human player
-	human = get_human_player();
-	if(isDefined(human))
-	{
-		dist_to_human_sq = DistanceSquared(human.origin, zombie.origin);
-		if(dist_to_human_sq < 22500) // 150^2
-			score += 400;
-		else if(dist_to_human_sq < 90000) // 300^2
-			score += 200;
-	}
-	
-	return score;
-}
-
-// Fire coordination - prevents multiple bots targeting same zombie
-bot_coordinate_fire()
-{
-	if(!isDefined(self.bot.fire_coord_time) || GetTime() > self.bot.fire_coord_time)
-	{
-		self.bot.fire_coord_time = GetTime() + 1500;
+		// Set global flag to prevent other bots from trying at the same time
+		level.door_being_opened = true;
 		
-		if(!isDefined(self.bot.threat.entity))
+		// Try to open the door
+		self UseButtonPressed();
+		
+		// Wait a bit for door to process
+		wait 0.5;
+		
+		// Reset flag so other bots can try later
+		level.door_being_opened = false;
+	}
+}
+
+// Prevents bots from using mystery boxes that have teddy bears
+bot_safely_use_mystery_box()
+{
+	// Find closest mystery box
+	box_triggers = getEntArray("treasure_chest_use", "targetname");
+	
+	closest_dist = 999999;
+	closest_box = undefined;
+	
+	foreach(box in box_triggers)
+	{
+		if(!isDefined(box))
+			continue;
+			
+		dist = Distance(self.origin, box.origin);
+		if(dist < closest_dist && dist < 80) // Only consider boxes within 80 units
+		{
+			closest_dist = dist;
+			closest_box = box;
+		}
+	}
+	
+	// If we found a box and we're close to it
+	if(isDefined(closest_box))
+	{
+		// Check if this box has a teddy bear
+		box_location = closest_box.origin;
+		if(array_contains(level.mystery_box_teddy_locations, box_location))
+		{
+			// Don't use this box, it has a teddy bear
 			return;
-			
-		my_target = self.bot.threat.entity;
-		redundant_count = 0;
-		
-		foreach(player in get_players())
-		{
-			if(player == self || !isDefined(player.bot))
-				continue;
-				
-			if(isDefined(player.bot.threat.entity) && player.bot.threat.entity == my_target)
-				redundant_count++;
-		}
-		
-		// If 2+ bots already targeting, find different target
-		if(redundant_count >= 2)
-		{
-			zombies = getaispeciesarray(level.zombie_team, "all");
-			best_alternate = undefined;
-			best_score = -1;
-			
-			foreach(zombie in zombies)
-			{
-				if(zombie == my_target)
-					continue;
-					
-				if(!self botsighttracepassed(zombie))
-					continue;
-					
-				contention = bot_get_target_contention(zombie);
-				
-				if(contention < 2)
-				{
-					score = bot_calculate_threat_score(zombie);
-					score += (2 - contention) * 200;
-					
-					if(score > best_score)
-					{
-						best_score = score;
-						best_alternate = zombie;
-					}
-				}
-			}
-			
-			if(isDefined(best_alternate))
-			{
-				self.bot.threat.entity = best_alternate;
-				self.bot.threat.position = best_alternate.origin;
-				self.bot.threat.time_first_sight = GetTime();
-			}
 		}
 	}
 }
 
-// Check how many bots are targeting a specific zombie
-bot_get_target_contention(zombie)
+// Monitor box for teddy bear
+watch_for_box_teddy(box)
 {
-	bot_count = 0;
+	self endon("disconnect");
 	
-	foreach(player in get_players())
-	{
-		if(!isDefined(player.bot) || player == self)
-			continue;
-			
-		if(isDefined(player.bot.threat.entity) && player.bot.threat.entity == zombie)
-			bot_count++;
-	}
+	// Wait for the teddy bear notification or other game events
+	level waittill_any("weapon_fly_away_start", "teddy_bear", "box_moving");
 	
-	return bot_count;
-}
-
-// Tactical positioning - finds chokepoints
-bot_use_tactical_positioning()
-{
-	if(!isDefined(self.bot.tactical_pos_time) || GetTime() > self.bot.tactical_pos_time)
+	// When teddy bear appears, add this box location to the list of teddy locations
+	if(!array_contains(level.mystery_box_teddy_locations, box.origin))
 	{
-		self.bot.tactical_pos_time = GetTime() + 3000;
-		
-		if(isDefined(self.bot.threat.entity) || 
-		   self hasgoal("revive") || 
-		   self hasgoal("panic") ||
-		   self hasgoal("flee"))
-			return;
-			
-		nodes = GetNodesInRadius(self.origin, 450, 0);
-		
-		if(!isDefined(nodes) || nodes.size == 0)
-			return;
-			
-		best_node = undefined;
-		best_score = 40;
-		
-		foreach(node in nodes)
-		{
-			score = bot_evaluate_tactical_position(node);
-			if(score > best_score)
-			{
-				best_score = score;
-				best_node = node;
-			}
-		}
-		
-		if(isDefined(best_node))
-		{
-			if(!self hasgoal("tactical") || DistanceSquared(self GetGoal("tactical"), best_node.origin) > 10000)
-			{
-				self cancelgoal("tactical");
-				self AddGoal(best_node.origin, 50, 1, "tactical");
-			}
-		}
+		level.mystery_box_teddy_locations[level.mystery_box_teddy_locations.size] = box.origin;
 	}
 }
 
-// Evaluate tactical value of a position
-bot_evaluate_tactical_position(node)
+// Check if an array contains a specific value (origin)
+array_contains(array, value)
 {
-	if(!isDefined(node) || !isDefined(node.origin))
-		return 0;
-		
-	score = 0;
-	
-	zombies = getaispeciesarray(level.zombie_team, "all");
-	approach_angles = [];
-	nearby_zombie_count = 0;
-	
-	foreach(zombie in zombies)
-	{
-		if(!isDefined(zombie) || !isalive(zombie))
-			continue;
-			
-		dist_sq = DistanceSquared(node.origin, zombie.origin);
-		if(dist_sq < 360000) // 600^2
-		{
-			nearby_zombie_count++;
-			angle_to_zombie = VectorToAngles(zombie.origin - node.origin)[1];
-			approach_angles[approach_angles.size] = angle_to_zombie;
-		}
-	}
-	
-	if(approach_angles.size > 2)
-	{
-		angle_spread = bot_calculate_angle_spread(approach_angles);
-		
-		if(angle_spread < 90)
-			score += 120;
-		else if(angle_spread < 150)
-			score += 60;
-	}
-	
-	human = get_human_player();
-	if(isDefined(human))
-	{
-		dist_to_human_sq = DistanceSquared(node.origin, human.origin);
-		
-		if(dist_to_human_sq > 40000 && dist_to_human_sq < 160000) // 200-400 units
-			score += 80;
-		else if(dist_to_human_sq > 22500 && dist_to_human_sq < 250000) // 150-500 units
-			score += 40;
-		else if(dist_to_human_sq < 10000) // <100 units
-			score -= 50;
-	}
-	
-	height_diff = node.origin[2] - self.origin[2];
-	if(height_diff > 20 && height_diff < 100)
-		score += 30;
-	
-	dist_from_current_sq = DistanceSquared(node.origin, self.origin);
-	if(dist_from_current_sq > 90000) // >300 units
-		score -= 20;
-	
-	if(bot_has_nearby_cover(node))
-		score += 50;
-	
-	return score;
-}
-
-// Calculate angle spread to detect funnel points
-bot_calculate_angle_spread(angles)
-{
-	if(!isDefined(angles) || angles.size < 2)
-		return 360;
-		
-	min_angle = 360;
-	max_angle = 0;
-	
-	foreach(angle in angles)
-	{
-		while(angle < 0)
-			angle += 360;
-		while(angle >= 360)
-			angle -= 360;
-			
-		if(angle < min_angle)
-			min_angle = angle;
-		if(angle > max_angle)
-			max_angle = angle;
-	}
-	
-	spread = max_angle - min_angle;
-	
-	if(spread > 180)
-		spread = 360 - spread;
-		
-	return spread;
-}
-
-// Check if position has nearby cover
-bot_has_nearby_cover(node)
-{
-	if(!isDefined(node))
+	if(!isDefined(array) || !array.size)
 		return false;
 		
-	check_distances = array(50, 80, 120);
-	check_angles = array(0, 45, 90, 135, 180, 225, 270, 315);
-	
-	cover_points = 0;
-	
-	foreach(dist in check_distances)
+	foreach(item in array)
 	{
-		foreach(angle in check_angles)
-		{
-			rad = angle * 0.01745;
-			check_x = node.origin[0] + (cos(rad) * dist);
-			check_y = node.origin[1] + (sin(rad) * dist);
-			check_pos = (check_x, check_y, node.origin[2]);
-			
-			if(!SightTracePassed(node.origin + (0, 0, 40), check_pos + (0, 0, 40), false, undefined))
-				cover_points++;
-		}
+		// Compare origins with a small tolerance
+		if(Distance(item, value) < 10)
+			return true;
 	}
-	
-	return (cover_points > 7);
-}
-
-// Helper to get human player
-get_human_player()
-{
-	players = get_players();
-	foreach(player in players)
-	{
-		if(!isDefined(player.bot))
-			return player;
-	}
-	return undefined;
-}
-
-// Check if bot should use knife
-bot_should_use_knife()
-{
-	if(!isDefined(self.bot.threat.entity))
-		return false;
-	
-	if(isDefined(self.bot.last_knife_time) && (GetTime() - self.bot.last_knife_time) < 800)
-		return false;
-	
-	enemy = self.bot.threat.entity;
-	dist_sq = DistanceSquared(self.origin, enemy.origin);
-	
-	weapon = self GetCurrentWeapon();
-	currentammo = self getweaponammoclip(weapon) + self getweaponammostock(weapon);
-	
-	// If out of ammo and close enough
-	if(!currentammo && dist_sq < 6400) // 80^2
-		return true;
-	
-	current_round = level.round_number;
-	
-	// Rounds 1-2: Prefer knife for efficiency
-	if(current_round <= 2 && dist_sq < 10000) // 100^2
-		return true;
-		
-	// Round 3+: Emergency knife
-	if(dist_sq < 4900) // 70^2
-		return true;
 	
 	return false;
 }
 
-// Execute knife attack
-bot_perform_knife_attack()
+// Helper function to combine arrays
+array_combine(array1, array2)
 {
-	if(!isDefined(self.bot.threat.entity))
-		return;
+	if(!isDefined(array1))
+		return array2;
 	
-	enemy = self.bot.threat.entity;
-	
-	if(isDefined(enemy.origin))
-		self lookat(enemy.origin + (0, 0, 40));
-	
-	wait 0.05;
-	
-	self MeleeButtonPressed();
-	self.bot.last_knife_time = GetTime();
-	
-	wait 0.4;
-}
-
-// Maintain formation to prevent clustering
-bot_maintain_formation()
-{
-	if(!isDefined(self.bot.formation_check_time) || GetTime() < self.bot.formation_check_time)
-		return;
+	if(!isDefined(array2))
+		return array1;
 		
-	self.bot.formation_check_time = GetTime() + 2000;
-	
-	other_bots = [];
-	foreach(player in get_players())
+	combined = [];
+	foreach(item in array1)
 	{
-		if(player != self && isDefined(player.bot))
-			other_bots[other_bots.size] = player;
+		combined[combined.size] = item;
 	}
 	
-	if(other_bots.size > 0)
+	foreach(item in array2)
 	{
-		closest_dist_sq = 999999;
-		foreach(bot in other_bots)
-		{
-			dist_sq = DistanceSquared(self.origin, bot.origin);
-			if(dist_sq < closest_dist_sq)
-				closest_dist_sq = dist_sq;
-		}
-		
-		if(closest_dist_sq < 22500 && !self hasgoal("spread")) // 150^2
-		{
-			offset = (randomintrange(-200, 200), randomintrange(-200, 200), 0);
-			wander_goal = self GetGoal("wander");
-			if(isDefined(wander_goal))
-			{
-				spread_goal = wander_goal + offset;
-				self AddGoal(spread_goal, 100, 1, "spread");
-			}
-		}
-		else if(closest_dist_sq >= 22500 && self hasgoal("spread"))
-		{
-			self cancelgoal("spread");
-		}
+		combined[combined.size] = item;
 	}
-}
-
-// Trap activation logic
-bot_use_trap()
-{
-	if(!isDefined(self.bot.trap_check_time) || GetTime() > self.bot.trap_check_time)
-	{
-		self.bot.trap_check_time = GetTime() + 4000;
-		
-		if(self.score < 1000 || !flag("power_on"))
-			return;
-			
-		zombies = self bot_get_cached_zombies();
-		nearby_zombies = 0;
-		
-		foreach(zombie in zombies)
-		{
-			if(DistanceSquared(self.origin, zombie.origin) < 122500) // 350^2
-				nearby_zombies++;
-		}
-		
-		if(nearby_zombies < 5)
-			return;
-			
-		trap_triggers = GetEntArray("zombie_trap", "targetname");
-		
-		closest_trap = undefined;
-		closest_dist_sq = 62500; // 250^2
-		
-		foreach(trap in trap_triggers)
-		{
-			if(!isDefined(trap) || !isDefined(trap.origin))
-				continue;
-				
-			if(isDefined(trap.bot_trap_cooldown) && GetTime() < trap.bot_trap_cooldown)
-				continue;
-				
-			dist_sq = DistanceSquared(self.origin, trap.origin);
-			if(dist_sq < closest_dist_sq)
-			{
-				closest_trap = trap;
-				closest_dist_sq = dist_sq;
-			}
-		}
-		
-		if(isDefined(closest_trap))
-		{
-			trap_cost = 1000;
-			if(isDefined(closest_trap.zombie_cost))
-				trap_cost = closest_trap.zombie_cost;
-				
-			if(self.score >= trap_cost)
-			{
-				self lookat(closest_trap.origin);
-				wait 0.2;
-				
-				self maps\mp\zombies\_zm_score::minus_to_player_score(trap_cost);
-				
-				if(isDefined(closest_trap.unitrigger_stub) && isDefined(closest_trap.unitrigger_stub.trigger))
-					closest_trap.unitrigger_stub.trigger notify("trigger", self);
-				else
-					closest_trap notify("trigger", self);
-				
-				closest_trap.bot_trap_cooldown = GetTime() + 25000;
-				self.bot.trap_check_time = GetTime() + 10000;
-			}
-		}
-	}
-}
-
-// Smart kiting/training logic
-bot_smart_kiting()
-{
-	if(level.round_number < 3)
-		return;
-		
-	if(!isDefined(self.bot.kite_check_time) || GetTime() > self.bot.kite_check_time)
-	{
-		self.bot.kite_check_time = GetTime() + 1000;
-		
-		zombies = self bot_get_cached_zombies();
-		nearby_zombies = 0;
-		zombie_center = (0, 0, 0);
-		
-		foreach(zombie in zombies)
-		{
-			dist_sq = DistanceSquared(self.origin, zombie.origin);
-			if(dist_sq < 250000) // 500^2
-			{
-				nearby_zombies++;
-				zombie_center += zombie.origin;
-			}
-		}
-		
-		if(nearby_zombies >= 5)
-		{
-			zombie_center = zombie_center / nearby_zombies;
-			escape_vector = VectorNormalize(self.origin - zombie_center);
-			right_vector = (-escape_vector[1], escape_vector[0], 0);
-			
-			if(!isDefined(self.bot.kite_direction))
-				self.bot.kite_direction = 1;
-				
-			kite_target = self.origin + (escape_vector * 250) + (right_vector * 180 * self.bot.kite_direction);
-			
-			if(FindPath(self.origin, kite_target, undefined, 0, 1))
-			{
-				if(!self hasgoal("kiting") || DistanceSquared(self GetGoal("kiting"), kite_target) > 22500)
-					self AddGoal(kite_target, 80, 2, "kiting");
-				
-				if(randomfloat(1) < 0.15)
-					self.bot.kite_direction *= -1;
-			}
-		}
-		else if(nearby_zombies < 3 && self hasgoal("kiting"))
-		{
-			self cancelgoal("kiting");
-		}
-	}
+	
+	return combined;
 }
 
 bot_combat_main()
 {
 	weapon = self getcurrentweapon();
 	currentammo = self getweaponammoclip(weapon) + self getweaponammostock(weapon);
-	
-	if(self bot_should_use_knife())
-	{
-		self bot_perform_knife_attack();
-		return;
-	}
 	
 	if(!currentammo)
 		return;
@@ -956,8 +399,7 @@ bot_update_aim(frames)
 	if(!threat_is_player())
 	{
 		height = ent getcentroid()[2] - prediction[2];
-		headshot_offset = 18;
-		return prediction + (0, 0, height + headshot_offset);
+		return prediction + (0, 0, height);
 	}
 	
 	height = ent getplayerviewheight();

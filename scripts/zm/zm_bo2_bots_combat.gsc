@@ -64,13 +64,6 @@ bot_combat_think(damage, attacker, direction)
 		self bot_combat_main();
 		self bot_pickup_powerup();
 		
-		// Initialize door coordination and mystery box tracking if not defined
-		if(!isDefined(level.door_being_opened))
-			level.door_being_opened = false;
-			
-		if(!isDefined(level.mystery_box_teddy_locations))
-			level.mystery_box_teddy_locations = [];
-		
 		// Safe door opening - prevents multiple bots from trying to open the same door
 		self bot_safely_interact_with_doors();
 		
@@ -178,45 +171,6 @@ watch_for_box_teddy(box)
 	{
 		level.mystery_box_teddy_locations[level.mystery_box_teddy_locations.size] = box.origin;
 	}
-}
-
-// Check if an array contains a specific value (origin)
-array_contains(array, value)
-{
-	if(!isDefined(array) || !array.size)
-		return false;
-		
-	foreach(item in array)
-	{
-		// Compare origins with a small tolerance
-		if(Distance(item, value) < 10)
-			return true;
-	}
-	
-	return false;
-}
-
-// Helper function to combine arrays
-array_combine(array1, array2)
-{
-	if(!isDefined(array1))
-		return array2;
-	
-	if(!isDefined(array2))
-		return array1;
-		
-	combined = [];
-	foreach(item in array1)
-	{
-		combined[combined.size] = item;
-	}
-	
-	foreach(item in array2)
-	{
-		combined[combined.size] = item;
-	}
-	
-	return combined;
 }
 
 bot_combat_main()

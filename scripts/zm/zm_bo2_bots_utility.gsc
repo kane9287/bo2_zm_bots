@@ -183,3 +183,26 @@ array_contains(array, value)
 	
 	return false;
 }
+
+// Helper function to combine two arrays
+array_combine(array1, array2)
+{
+	if(!isDefined(array1))
+		return array2;
+	
+	if(!isDefined(array2))
+		return array1;
+		
+	combined = [];
+	foreach(item in array1)
+	{
+		combined[combined.size] = item;
+	}
+	
+	foreach(item in array2)
+	{
+		combined[combined.size] = item;
+	}
+	
+	return combined;
+}
